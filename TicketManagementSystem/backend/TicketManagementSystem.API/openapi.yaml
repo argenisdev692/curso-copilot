@@ -1,0 +1,1565 @@
+openapi: 3.1.0
+info:
+  title: Ticket Management System API
+  description: |
+    API RESTful para el Sistema de Gestión de Tickets.
+    
+    ## Autenticación
+    Esta API utiliza **JWT Bearer Token** para autenticación. Para acceder a los endpoints protegidos:
+    1. Obtener un token mediante `/api/auth/login`
+    2. Incluir el token en el header `Authorization: Bearer {token}`
+    
+    ## Rate Limiting
+    - General: 200 requests/minuto
+    - Login: 20 requests/minuto
+    - Register: 10 requests/minuto
+    
+    ## Roles
+    - **Admin**: Acceso completo al sistema
+    - **Agent**: Gestión de tickets asignados
+    - **User**: Crear y ver tickets propios
+  version: 1.0.0
+  contact:
+    name: Equipo de Desarrollo
+    email: dev@ticketmanagement.com
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: http://localhost:5000/api
+    description: Servidor de desarrollo
+  - url: https://localhost:5001/api
+    description: Servidor de desarrollo (HTTPS)
+  - url: https://api.ticketmanagement.com/api
+    description: Servidor de producción
+
+tags:
+  - name: Auth
+    description: Autenticación y registro de usuarios
+  - name: Tickets
+    description: Gestión de tickets
+  - name: Users
+    description: Gestión de usuarios
+  - name: Comments
+    description: Comentarios en tickets
+  - name: Catalogs
+    description: Catálogos del sistema (prioridades, roles)
+
+security:
+  - BearerAuth: []
+
+paths:
+  # ==================== AUTH ====================
+  /auth/login:
+    post:
+      tags:
+        - Auth
+      summary: Iniciar sesión
+      description: Autenticar usuario y obtener token JWT
+      operationId: login
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginDto'
+            example:
+              email: "admin@example.com"
+              password: "Admin123!"
+      responses:
+        '200':
+          description: Login exitoso
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponseDto'
+        '400':
+          description: Datos de entrada inválidos
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          description: Credenciales inválidas
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '429':
+          description: Demasiadas solicitudes (rate limit)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+
+  /auth/register:
+    post:
+      tags:
+        - Auth
+      summary: Registrar nuevo usuario
+      description: Crear una nueva cuenta de usuario
+      operationId: register
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterDto'
+            example:
+              email: "newuser@example.com"
+              password: "SecurePass123!"
+              fullName: "Juan Pérez"
+              role: "User"
+      responses:
+        '201':
+          description: Usuario registrado exitosamente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegisterResponseDto'
+        '400':
+          description: Datos de entrada inválidos o email ya existe
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '429':
+          description: Demasiadas solicitudes (rate limit)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+
+  /auth/refresh:
+    post:
+      tags:
+        - Auth
+      summary: Refrescar token JWT
+      description: Obtener un nuevo token usando el refresh token
+      operationId: refreshToken
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshTokenRequestDto'
+      responses:
+        '200':
+          description: Token refrescado exitosamente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RefreshTokenResponseDto'
+        '401':
+          description: Refresh token inválido o expirado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+
+  /auth/logout:
+    post:
+      tags:
+        - Auth
+      summary: Cerrar sesión
+      description: Invalidar el token actual
+      operationId: logout
+      responses:
+        '200':
+          description: Sesión cerrada exitosamente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LogoutResponseDto'
+        '401':
+          description: No autenticado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+
+  # ==================== TICKETS ====================
+  /tickets:
+    get:
+      tags:
+        - Tickets
+      summary: Listar tickets
+      description: Obtener lista paginada de tickets con filtros opcionales
+      operationId: getTickets
+      parameters:
+        - name: page
+          in: query
+          description: Número de página (1-based)
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: pageSize
+          in: query
+          description: Cantidad de elementos por página
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 10
+        - name: status
+          in: query
+          description: Filtrar por estado
+          schema:
+            $ref: '#/components/schemas/Status'
+        - name: priority
+          in: query
+          description: Filtrar por prioridad
+          schema:
+            $ref: '#/components/schemas/Priority'
+        - name: assignedToId
+          in: query
+          description: Filtrar por usuario asignado
+          schema:
+            type: integer
+        - name: createdById
+          in: query
+          description: Filtrar por usuario creador
+          schema:
+            type: integer
+        - name: search
+          in: query
+          description: Buscar en título y descripción
+          schema:
+            type: string
+        - name: sortBy
+          in: query
+          description: Campo para ordenar
+          schema:
+            type: string
+            enum: [createdAt, updatedAt, priority, status, title]
+            default: createdAt
+        - name: sortOrder
+          in: query
+          description: Dirección del ordenamiento
+          schema:
+            type: string
+            enum: [asc, desc]
+            default: desc
+      responses:
+        '200':
+          description: Lista de tickets paginada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PagedResponseTicketDto'
+        '401':
+          description: No autenticado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+
+    post:
+      tags:
+        - Tickets
+      summary: Crear ticket
+      description: Crear un nuevo ticket
+      operationId: createTicket
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTicketDto'
+            example:
+              title: "Error en el módulo de pagos"
+              description: "Al intentar procesar un pago, el sistema muestra error 500"
+              priority: "High"
+              assignedToId: 2
+      responses:
+        '201':
+          description: Ticket creado exitosamente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TicketDto'
+        '400':
+          description: Datos de entrada inválidos
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          description: No autenticado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+
+  /tickets/{id}:
+    get:
+      tags:
+        - Tickets
+      summary: Obtener ticket por ID
+      description: Obtener detalles de un ticket específico
+      operationId: getTicketById
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: ID del ticket
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Detalles del ticket
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TicketDto'
+        '401':
+          description: No autenticado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: Ticket no encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+
+    put:
+      tags:
+        - Tickets
+      summary: Actualizar ticket
+      description: Actualizar un ticket existente
+      operationId: updateTicket
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: ID del ticket
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateTicketDto'
+            example:
+              status: "InProgress"
+              priority: "Critical"
+              assignedToId: 3
+      responses:
+        '200':
+          description: Ticket actualizado exitosamente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TicketDto'
+        '400':
+          description: Datos de entrada inválidos
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          description: No autenticado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Sin permisos para modificar este ticket
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: Ticket no encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+
+    delete:
+      tags:
+        - Tickets
+      summary: Eliminar ticket
+      description: Eliminar un ticket (solo Admin)
+      operationId: deleteTicket
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: ID del ticket
+          schema:
+            type: integer
+      responses:
+        '204':
+          description: Ticket eliminado exitosamente
+        '401':
+          description: No autenticado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Sin permisos para eliminar tickets
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: Ticket no encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+
+  /tickets/metrics:
+    get:
+      tags:
+        - Tickets
+      summary: Obtener métricas de tickets
+      description: Estadísticas generales de tickets (solo Admin)
+      operationId: getTicketMetrics
+      responses:
+        '200':
+          description: Métricas de tickets
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TicketMetrics'
+        '401':
+          description: No autenticado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Sin permisos para ver métricas
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+
+  /tickets/{id}/history:
+    get:
+      tags:
+        - Tickets
+      summary: Obtener historial del ticket
+      description: Obtener el historial de cambios de un ticket
+      operationId: getTicketHistory
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: ID del ticket
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Historial del ticket
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TicketHistoryDto'
+        '401':
+          description: No autenticado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: Ticket no encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+
+  # ==================== USERS ====================
+  /users:
+    get:
+      tags:
+        - Users
+      summary: Listar usuarios
+      description: Obtener lista paginada de usuarios (solo Admin)
+      operationId: getUsers
+      parameters:
+        - name: page
+          in: query
+          description: Número de página
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: pageSize
+          in: query
+          description: Cantidad de elementos por página
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 10
+        - name: role
+          in: query
+          description: Filtrar por rol
+          schema:
+            type: string
+            enum: [Admin, Agent, User]
+        - name: isActive
+          in: query
+          description: Filtrar por estado activo
+          schema:
+            type: boolean
+        - name: search
+          in: query
+          description: Buscar por nombre o email
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Lista de usuarios paginada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PagedResponseUserDto'
+        '401':
+          description: No autenticado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Sin permisos para listar usuarios
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+
+  /users/{id}:
+    get:
+      tags:
+        - Users
+      summary: Obtener usuario por ID
+      description: Obtener detalles de un usuario específico (solo Admin)
+      operationId: getUserById
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: ID del usuario
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Detalles del usuario
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserDto'
+        '401':
+          description: No autenticado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Sin permisos para ver usuarios
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: Usuario no encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+
+    put:
+      tags:
+        - Users
+      summary: Actualizar usuario
+      description: Actualizar un usuario existente (solo Admin)
+      operationId: updateUser
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: ID del usuario
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateUserDto'
+            example:
+              fullName: "Juan Carlos Pérez"
+              role: "Agent"
+              isActive: true
+      responses:
+        '200':
+          description: Usuario actualizado exitosamente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserDto'
+        '400':
+          description: Datos de entrada inválidos
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          description: No autenticado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Sin permisos para modificar usuarios
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: Usuario no encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+
+    delete:
+      tags:
+        - Users
+      summary: Eliminar usuario
+      description: Eliminar un usuario (solo Admin)
+      operationId: deleteUser
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: ID del usuario
+          schema:
+            type: integer
+      responses:
+        '204':
+          description: Usuario eliminado exitosamente
+        '401':
+          description: No autenticado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Sin permisos para eliminar usuarios
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: Usuario no encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+
+  # ==================== COMMENTS ====================
+  /comments/ticket/{ticketId}:
+    get:
+      tags:
+        - Comments
+      summary: Obtener comentarios de un ticket
+      description: Listar todos los comentarios de un ticket
+      operationId: getCommentsByTicket
+      parameters:
+        - name: ticketId
+          in: path
+          required: true
+          description: ID del ticket
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Lista de comentarios
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CommentDto'
+        '401':
+          description: No autenticado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: Ticket no encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+
+  /comments:
+    post:
+      tags:
+        - Comments
+      summary: Crear comentario
+      description: Agregar un comentario a un ticket
+      operationId: createComment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCommentDto'
+            example:
+              ticketId: 1
+              content: "He revisado el error y parece ser un problema de configuración"
+      responses:
+        '201':
+          description: Comentario creado exitosamente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommentDto'
+        '400':
+          description: Datos de entrada inválidos
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          description: No autenticado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: Ticket no encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+
+  /comments/{id}:
+    put:
+      tags:
+        - Comments
+      summary: Actualizar comentario
+      description: Actualizar un comentario existente (solo autor)
+      operationId: updateComment
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: ID del comentario
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateCommentDto'
+      responses:
+        '200':
+          description: Comentario actualizado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommentDto'
+        '401':
+          description: No autenticado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Sin permisos para modificar este comentario
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: Comentario no encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+
+    delete:
+      tags:
+        - Comments
+      summary: Eliminar comentario
+      description: Eliminar un comentario (autor o Admin)
+      operationId: deleteComment
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: ID del comentario
+          schema:
+            type: integer
+      responses:
+        '204':
+          description: Comentario eliminado exitosamente
+        '401':
+          description: No autenticado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Sin permisos para eliminar este comentario
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: Comentario no encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+
+  # ==================== CATALOGS ====================
+  /priorities:
+    get:
+      tags:
+        - Catalogs
+      summary: Listar prioridades
+      description: Obtener catálogo de prioridades disponibles
+      operationId: getPriorities
+      security: []
+      responses:
+        '200':
+          description: Lista de prioridades
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PriorityDto'
+
+  /roles:
+    get:
+      tags:
+        - Catalogs
+      summary: Listar roles
+      description: Obtener catálogo de roles disponibles
+      operationId: getRoles
+      responses:
+        '200':
+          description: Lista de roles
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/RoleDto'
+        '401':
+          description: No autenticado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+
+  # ==================== HEALTH ====================
+  /health:
+    get:
+      tags:
+        - System
+      summary: Health check
+      description: Verificar estado de salud de la API
+      operationId: healthCheck
+      security: []
+      responses:
+        '200':
+          description: API funcionando correctamente
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "Healthy"
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        Token JWT obtenido mediante el endpoint `/api/auth/login`.
+        
+        Formato: `Bearer {token}`
+        
+        Ejemplo: `Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...`
+
+  schemas:
+    # ==================== AUTH SCHEMAS ====================
+    LoginDto:
+      type: object
+      required:
+        - email
+        - password
+      properties:
+        email:
+          type: string
+          format: email
+          description: Email del usuario
+          example: "user@example.com"
+        password:
+          type: string
+          format: password
+          minLength: 6
+          description: Contraseña del usuario
+          example: "SecurePass123!"
+
+    LoginResponseDto:
+      type: object
+      properties:
+        token:
+          type: string
+          description: JWT access token
+          example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxIiwiZW1haWwiOiJhZG1pbkBleGFtcGxlLmNvbSIsInJvbGUiOiJBZG1pbiIsImV4cCI6MTczMjYyMDAwMH0.signature"
+        refreshToken:
+          type: string
+          description: Token para refrescar el access token
+          example: "dGhpcyBpcyBhIHJlZnJlc2ggdG9rZW4..."
+        expiresAt:
+          type: string
+          format: date-time
+          description: Fecha de expiración del token
+          example: "2025-11-25T16:00:00Z"
+        user:
+          $ref: '#/components/schemas/UserBasicDto'
+
+    RegisterDto:
+      type: object
+      required:
+        - email
+        - password
+        - fullName
+        - role
+      properties:
+        email:
+          type: string
+          format: email
+          description: Email único del usuario
+          example: "newuser@example.com"
+        password:
+          type: string
+          format: password
+          minLength: 6
+          description: Contraseña (mínimo 6 caracteres)
+          example: "SecurePass123!"
+        fullName:
+          type: string
+          maxLength: 100
+          description: Nombre completo del usuario
+          example: "Juan Pérez"
+        role:
+          type: string
+          enum: [Admin, Agent, User]
+          default: User
+          description: Rol del usuario
+          example: "User"
+
+    RegisterResponseDto:
+      type: object
+      properties:
+        message:
+          type: string
+          description: Mensaje de confirmación
+          example: "Usuario registrado exitosamente"
+        user:
+          $ref: '#/components/schemas/UserBasicDto'
+
+    RefreshTokenRequestDto:
+      type: object
+      required:
+        - refreshToken
+      properties:
+        refreshToken:
+          type: string
+          description: Refresh token válido
+          example: "dGhpcyBpcyBhIHJlZnJlc2ggdG9rZW4..."
+
+    RefreshTokenResponseDto:
+      type: object
+      properties:
+        token:
+          type: string
+          description: Nuevo JWT access token
+          example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+        refreshToken:
+          type: string
+          description: Nuevo refresh token
+          example: "bmV3IHJlZnJlc2ggdG9rZW4..."
+        expiresAt:
+          type: string
+          format: date-time
+          description: Nueva fecha de expiración
+          example: "2025-11-25T17:00:00Z"
+
+    LogoutResponseDto:
+      type: object
+      properties:
+        message:
+          type: string
+          description: Mensaje de confirmación
+          example: "Sesión cerrada exitosamente"
+
+    # ==================== USER SCHEMAS ====================
+    UserBasicDto:
+      type: object
+      properties:
+        id:
+          type: integer
+          description: ID único del usuario
+          example: 1
+        email:
+          type: string
+          format: email
+          description: Email del usuario
+          example: "user@example.com"
+        fullName:
+          type: string
+          description: Nombre completo
+          example: "Juan Pérez"
+        role:
+          type: string
+          enum: [Admin, Agent, User]
+          description: Rol del usuario
+          example: "User"
+
+    UserDto:
+      type: object
+      properties:
+        id:
+          type: integer
+          description: ID único del usuario
+          example: 1
+        email:
+          type: string
+          format: email
+          description: Email del usuario
+          example: "user@example.com"
+        fullName:
+          type: string
+          description: Nombre completo del usuario
+          example: "Juan Pérez"
+        role:
+          type: string
+          enum: [Admin, Agent, User]
+          description: Rol del usuario
+          example: "User"
+        isActive:
+          type: boolean
+          description: Indica si la cuenta está activa
+          example: true
+        createdAt:
+          type: string
+          format: date-time
+          description: Fecha de creación
+          example: "2025-11-01T10:00:00Z"
+        updatedAt:
+          type: string
+          format: date-time
+          description: Fecha de última actualización
+          example: "2025-11-15T14:30:00Z"
+
+    CreateUserDto:
+      type: object
+      required:
+        - email
+        - password
+        - fullName
+      properties:
+        email:
+          type: string
+          format: email
+          description: Email único del usuario
+          example: "newuser@example.com"
+        password:
+          type: string
+          format: password
+          minLength: 6
+          description: Contraseña
+          example: "SecurePass123!"
+        fullName:
+          type: string
+          description: Nombre completo
+          example: "María García"
+        role:
+          type: string
+          enum: [Admin, Agent, User]
+          default: User
+          description: Rol del usuario
+          example: "Agent"
+
+    UpdateUserDto:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+          description: Nuevo email
+          example: "updated@example.com"
+        fullName:
+          type: string
+          description: Nuevo nombre completo
+          example: "Juan Carlos Pérez"
+        role:
+          type: string
+          enum: [Admin, Agent, User]
+          description: Nuevo rol
+          example: "Agent"
+        isActive:
+          type: boolean
+          description: Estado de la cuenta
+          example: true
+
+    # ==================== TICKET SCHEMAS ====================
+    TicketDto:
+      type: object
+      properties:
+        id:
+          type: integer
+          description: ID único del ticket
+          example: 1
+        title:
+          type: string
+          description: Título del ticket
+          example: "Error en el módulo de pagos"
+        description:
+          type: string
+          description: Descripción detallada del problema
+          example: "Al intentar procesar un pago con tarjeta de crédito, el sistema muestra error 500"
+        status:
+          type: string
+          enum: [Open, InProgress, Resolved, Closed]
+          description: Estado actual del ticket
+          example: "Open"
+        priority:
+          type: string
+          enum: [Low, Medium, High, Critical]
+          description: Nivel de prioridad
+          example: "High"
+        createdById:
+          type: integer
+          description: ID del usuario que creó el ticket
+          example: 5
+        createdByName:
+          type: string
+          description: Nombre del usuario que creó el ticket
+          example: "Juan Pérez"
+        assignedToId:
+          type: integer
+          nullable: true
+          description: ID del usuario asignado
+          example: 2
+        assignedToName:
+          type: string
+          nullable: true
+          description: Nombre del usuario asignado
+          example: "María García"
+        createdAt:
+          type: string
+          format: date-time
+          description: Fecha de creación
+          example: "2025-11-20T09:00:00Z"
+        updatedAt:
+          type: string
+          format: date-time
+          description: Fecha de última actualización
+          example: "2025-11-21T14:30:00Z"
+        commentCount:
+          type: integer
+          description: Número de comentarios
+          example: 3
+
+    CreateTicketDto:
+      type: object
+      required:
+        - title
+        - description
+        - priority
+      properties:
+        title:
+          type: string
+          maxLength: 200
+          description: Título del ticket (máx 200 caracteres)
+          example: "Error en el módulo de pagos"
+        description:
+          type: string
+          maxLength: 1000
+          description: Descripción detallada (máx 1000 caracteres)
+          example: "Al intentar procesar un pago, el sistema muestra error 500"
+        priority:
+          $ref: '#/components/schemas/Priority'
+        assignedToId:
+          type: integer
+          nullable: true
+          description: ID del usuario a asignar (opcional)
+          example: 2
+
+    UpdateTicketDto:
+      type: object
+      properties:
+        title:
+          type: string
+          maxLength: 200
+          description: Nuevo título
+          example: "Error crítico en pagos"
+        description:
+          type: string
+          maxLength: 1000
+          description: Nueva descripción
+          example: "Descripción actualizada del problema"
+        status:
+          $ref: '#/components/schemas/Status'
+        priority:
+          $ref: '#/components/schemas/Priority'
+        assignedToId:
+          type: integer
+          nullable: true
+          description: ID del nuevo usuario asignado
+          example: 3
+
+    TicketHistoryDto:
+      type: object
+      properties:
+        id:
+          type: integer
+          description: ID del registro de historial
+          example: 1
+        ticketId:
+          type: integer
+          description: ID del ticket
+          example: 1
+        fieldName:
+          type: string
+          description: Campo modificado
+          example: "Status"
+        oldValue:
+          type: string
+          description: Valor anterior
+          example: "Open"
+        newValue:
+          type: string
+          description: Valor nuevo
+          example: "InProgress"
+        changedById:
+          type: integer
+          description: ID del usuario que hizo el cambio
+          example: 2
+        changedByName:
+          type: string
+          description: Nombre del usuario que hizo el cambio
+          example: "María García"
+        changedAt:
+          type: string
+          format: date-time
+          description: Fecha del cambio
+          example: "2025-11-21T10:30:00Z"
+
+    TicketMetrics:
+      type: object
+      properties:
+        totalTickets:
+          type: integer
+          description: Total de tickets en el sistema
+          example: 150
+        openTickets:
+          type: integer
+          description: Tickets abiertos
+          example: 45
+        inProgressTickets:
+          type: integer
+          description: Tickets en progreso
+          example: 30
+        resolvedTickets:
+          type: integer
+          description: Tickets resueltos
+          example: 50
+        closedTickets:
+          type: integer
+          description: Tickets cerrados
+          example: 25
+        criticalTickets:
+          type: integer
+          description: Tickets con prioridad crítica
+          example: 5
+        averageResolutionTimeHours:
+          type: number
+          format: double
+          description: Tiempo promedio de resolución en horas
+          example: 24.5
+        ticketsByPriority:
+          type: object
+          additionalProperties:
+            type: integer
+          description: Tickets agrupados por prioridad
+          example:
+            Low: 20
+            Medium: 60
+            High: 50
+            Critical: 20
+        ticketsByStatus:
+          type: object
+          additionalProperties:
+            type: integer
+          description: Tickets agrupados por estado
+          example:
+            Open: 45
+            InProgress: 30
+            Resolved: 50
+            Closed: 25
+
+    # ==================== COMMENT SCHEMAS ====================
+    CommentDto:
+      type: object
+      properties:
+        id:
+          type: integer
+          description: ID del comentario
+          example: 1
+        content:
+          type: string
+          description: Contenido del comentario
+          example: "He revisado el error y parece ser un problema de configuración"
+        createdById:
+          type: integer
+          description: ID del autor
+          example: 2
+        createdByName:
+          type: string
+          description: Nombre del autor
+          example: "María García"
+        createdAt:
+          type: string
+          format: date-time
+          description: Fecha de creación
+          example: "2025-11-21T11:00:00Z"
+        updatedAt:
+          type: string
+          format: date-time
+          description: Fecha de última edición
+          example: "2025-11-21T11:00:00Z"
+
+    CreateCommentDto:
+      type: object
+      required:
+        - ticketId
+        - content
+      properties:
+        ticketId:
+          type: integer
+          description: ID del ticket
+          example: 1
+        content:
+          type: string
+          maxLength: 2000
+          description: Contenido del comentario
+          example: "He revisado el error y encontré la causa"
+
+    UpdateCommentDto:
+      type: object
+      required:
+        - content
+      properties:
+        content:
+          type: string
+          maxLength: 2000
+          description: Nuevo contenido del comentario
+          example: "Contenido actualizado del comentario"
+
+    # ==================== CATALOG SCHEMAS ====================
+    PriorityDto:
+      type: object
+      properties:
+        id:
+          type: integer
+          description: ID de la prioridad
+          example: 1
+        name:
+          type: string
+          description: Nombre de la prioridad
+          example: "High"
+        level:
+          type: integer
+          description: Nivel numérico (mayor = más urgente)
+          example: 3
+        color:
+          type: string
+          description: Color asociado (hex)
+          example: "#FF6B6B"
+
+    RoleDto:
+      type: object
+      properties:
+        id:
+          type: integer
+          description: ID del rol
+          example: 1
+        name:
+          type: string
+          description: Nombre del rol
+          example: "Admin"
+        description:
+          type: string
+          description: Descripción del rol
+          example: "Administrador del sistema con acceso completo"
+
+    # ==================== ENUMS ====================
+    Status:
+      type: string
+      enum:
+        - Open
+        - InProgress
+        - Resolved
+        - Closed
+      description: |
+        Estados del ticket:
+        - `Open` (0): Ticket nuevo, pendiente de asignación
+        - `InProgress` (1): Ticket en proceso de resolución
+        - `Resolved` (2): Ticket resuelto, pendiente de verificación
+        - `Closed` (3): Ticket cerrado definitivamente
+
+    Priority:
+      type: string
+      enum:
+        - Low
+        - Medium
+        - High
+        - Critical
+      description: |
+        Niveles de prioridad:
+        - `Low` (1): Baja prioridad, puede esperar
+        - `Medium` (2): Prioridad normal
+        - `High` (3): Alta prioridad, atención pronta
+        - `Critical` (4): Crítico, atención inmediata
+
+    # ==================== PAGINATION ====================
+    PagedResponseTicketDto:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/TicketDto'
+          description: Lista de tickets
+        totalItems:
+          type: integer
+          description: Total de items en la base de datos
+          example: 150
+        page:
+          type: integer
+          description: Página actual
+          example: 1
+        pageSize:
+          type: integer
+          description: Tamaño de página
+          example: 10
+        totalPages:
+          type: integer
+          description: Total de páginas
+          example: 15
+        hasNextPage:
+          type: boolean
+          description: Indica si hay página siguiente
+          example: true
+        hasPreviousPage:
+          type: boolean
+          description: Indica si hay página anterior
+          example: false
+
+    PagedResponseUserDto:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/UserDto'
+          description: Lista de usuarios
+        totalItems:
+          type: integer
+          description: Total de items en la base de datos
+          example: 50
+        page:
+          type: integer
+          description: Página actual
+          example: 1
+        pageSize:
+          type: integer
+          description: Tamaño de página
+          example: 10
+        totalPages:
+          type: integer
+          description: Total de páginas
+          example: 5
+        hasNextPage:
+          type: boolean
+          description: Indica si hay página siguiente
+          example: true
+        hasPreviousPage:
+          type: boolean
+          description: Indica si hay página anterior
+          example: false
+
+    # ==================== ERROR SCHEMAS ====================
+    ProblemDetails:
+      type: object
+      description: Formato de error según RFC 7807
+      properties:
+        type:
+          type: string
+          description: URI que identifica el tipo de error
+          example: "https://tools.ietf.org/html/rfc7231#section-6.5.1"
+        title:
+          type: string
+          description: Título del error
+          example: "Bad Request"
+        status:
+          type: integer
+          description: Código HTTP
+          example: 400
+        detail:
+          type: string
+          description: Descripción detallada del error
+          example: "El campo 'email' es requerido"
+        instance:
+          type: string
+          description: URI de la instancia del error
+          example: "/api/auth/login"
+        errors:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
+          description: Errores de validación por campo
+          example:
+            email:
+              - "El campo 'email' es requerido"
+              - "El formato del email es inválido"
+            password:
+              - "La contraseña debe tener al menos 6 caracteres"
+        traceId:
+          type: string
+          description: ID de traza para debugging
+          example: "00-abc123def456-789xyz-00"

@@ -1,0 +1,9 @@
+{
+  "*.{ts,js,json,html,scss,css,md}": [
+    "prettier --write",
+    "eslint --fix"
+  ],
+  "*.ts": [
+    "tsc --noEmit --skipLibCheck"
+  ]
+}

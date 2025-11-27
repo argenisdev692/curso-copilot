@@ -1,0 +1,137 @@
+<div class="ticket-list-container">
+  <div class="header">
+    <h1>Tickets</h1>
+    <button class="btn btn-primary" routerLink="/tickets/new">Nuevo Ticket</button>
+  </div>
+
+  <div class="filters">
+    <div class="search-bar">
+      <input
+        type="text"
+        placeholder="Buscar tickets..."
+        aria-label="Buscar tickets"
+        formControlName="searchTerm"
+        [formGroup]="filterForm">
+    </div>
+
+    <div class="filter-dropdowns">
+      <select formControlName="status" [formGroup]="filterForm" (change)="onFilterChange()">
+        <option value="">Todos los estados</option>
+        <option value="Open">Abierto</option>
+        <option value="InProgress">En Progreso</option>
+        <option value="Resolved">Resuelto</option>
+        <option value="Closed">Cerrado</option>
+      </select>
+
+      <select formControlName="priority" [formGroup]="filterForm" (change)="onFilterChange()">
+        <option value="">Todas las prioridades</option>
+        <option value="Low">Baja</option>
+        <option value="Medium">Media</option>
+        <option value="High">Alta</option>
+        <option value="Critical">Crítica</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="loading" *ngIf="isLoading()">
+    <div class="spinner"></div>
+    Cargando...
+  </div>
+
+  <div class="no-tickets" *ngIf="!isLoading() && tickets().length === 0">
+    No hay tickets
+  </div>
+
+  <div class="table-container" *ngIf="!isLoading() && tickets().length > 0">
+    <table role="table" class="ticket-table">
+      <thead>
+        <tr role="row">
+          <th>ID</th>
+          <th>Título</th>
+          <th>Estado</th>
+          <th>Prioridad</th>
+          <th>Asignado a</th>
+          <th>Fecha creación</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr
+          role="row"
+          *ngFor="let ticket of tickets(); trackBy: trackByTicketId"
+          class="ticket-row"
+          (click)="router.navigate(['/tickets', ticket.id])">
+          <td>{{ ticket.id }}</td>
+          <td>{{ ticket.title }}</td>
+          <td>
+            <span class="badge" [ngClass]="getStatusBadgeClass(ticket.status)">
+              {{ ticket.status }}
+            </span>
+          </td>
+          <td>{{ ticket.priority }}</td>
+          <td>{{ ticket.assignedToName || 'No asignado' }}</td>
+          <td>{{ ticket.createdAt | date:'short' }}</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="mobile-cards" *ngIf="!isLoading() && tickets().length > 0">
+    <cdk-virtual-scroll-viewport itemSize="200" style="height: 70vh; width: 100%">
+      <div
+        class="card"
+        *cdkVirtualFor="let ticket of tickets(); trackBy: trackByTicketId"
+        (click)="router.navigate(['/tickets', ticket.id])">
+        <div class="card-header">
+          <div class="card-title">{{ ticket.title }}</div>
+          <span class="badge" [ngClass]="getStatusBadgeClass(ticket.status)">
+            {{ ticket.status }}
+          </span>
+        </div>
+        <div class="card-body">
+          <div class="card-row">
+            <span class="label">ID:</span>
+            <span>{{ ticket.id }}</span>
+          </div>
+          <div class="card-row">
+            <span class="label">Prioridad:</span>
+            <span>{{ ticket.priority }}</span>
+          </div>
+          <div class="card-row">
+            <span class="label">Asignado a:</span>
+            <span>{{ ticket.assignedToName || 'No asignado' }}</span>
+          </div>
+          <div class="card-row">
+            <span class="label">Fecha:</span>
+            <span>{{ ticket.createdAt | date:'short' }}</span>
+          </div>
+        </div>
+      </div>
+    </cdk-virtual-scroll-viewport>
+  </div>
+
+  <div class="pagination" *ngIf="totalPages() > 1">
+    <button
+      class="btn btn-secondary"
+      [disabled]="currentPage() === 1"
+      (click)="onPageChange(currentPage() - 1)"
+      aria-label="Página anterior">
+      Anterior
+    </button>
+
+    <span>Página {{ currentPage() }} de {{ totalPages() }}</span>
+
+    <button
+      class="btn btn-secondary"
+      [disabled]="currentPage() === totalPages()"
+      (click)="onPageChange(currentPage() + 1)"
+      aria-label="Página siguiente">
+      Siguiente
+    </button>
+
+    <select [value]="pageSize()" (change)="onPageSizeChange($event)">
+      <option value="10">10</option>
+      <option value="25">25</option>
+      <option value="50">50</option>
+    </select>
+  </div>
+</div>

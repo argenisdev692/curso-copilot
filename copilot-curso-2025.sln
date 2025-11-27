@@ -1,0 +1,32 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.5.2.0
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "TicketManagementSystem", "TicketManagementSystem", "{83FD7C1E-D6EC-27B6-4383-04BC57AFD589}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "backend", "backend", "{EEFBF5FE-20A8-C2A1-9461-344A30641F13}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TicketManagementSystem.API", "TicketManagementSystem\backend\TicketManagementSystem.API\TicketManagementSystem.API.csproj", "{7679227E-072E-B4F2-889A-7CFA810DE0F3}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{7679227E-072E-B4F2-889A-7CFA810DE0F3}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{7679227E-072E-B4F2-889A-7CFA810DE0F3}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{7679227E-072E-B4F2-889A-7CFA810DE0F3}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{7679227E-072E-B4F2-889A-7CFA810DE0F3}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{EEFBF5FE-20A8-C2A1-9461-344A30641F13} = {83FD7C1E-D6EC-27B6-4383-04BC57AFD589}
+		{7679227E-072E-B4F2-889A-7CFA810DE0F3} = {EEFBF5FE-20A8-C2A1-9461-344A30641F13}
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {642B75ED-3717-4A52-9303-F998298BE55B}
+	EndGlobalSection
+EndGlobal

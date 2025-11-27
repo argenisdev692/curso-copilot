@@ -1,0 +1,55 @@
+{
+  "data": [
+    {
+      "id": 1,
+      "title": "Software Bug Report",
+      "description": "Application crashes when clicking save button in the user profile section",
+      "status": "Open",
+      "priority": "High",
+      "createdBy": {
+        "id": 1,
+        "fullName": "Test User"
+      },
+      "assignedTo": null,
+      "createdAt": "2025-01-15T10:00:00Z",
+      "updatedAt": "2025-01-15T10:00:00Z"
+    },
+    {
+      "id": 2,
+      "title": "Feature Request: Dark Mode",
+      "description": "Add dark mode toggle to improve user experience in low light conditions",
+      "status": "In Progress",
+      "priority": "Medium",
+      "createdBy": {
+        "id": 1,
+        "fullName": "Test User"
+      },
+      "assignedTo": {
+        "id": 2,
+        "fullName": "Test Agent"
+      },
+      "createdAt": "2025-01-14T15:30:00Z",
+      "updatedAt": "2025-01-15T09:15:00Z"
+    },
+    {
+      "id": 3,
+      "title": "Performance Issue",
+      "description": "Dashboard loading is slow when there are more than 100 tickets",
+      "status": "Resolved",
+      "priority": "High",
+      "createdBy": {
+        "id": 1,
+        "fullName": "Test User"
+      },
+      "assignedTo": {
+        "id": 2,
+        "fullName": "Test Agent"
+      },
+      "createdAt": "2025-01-10T08:00:00Z",
+      "updatedAt": "2025-01-14T16:45:00Z"
+    }
+  ],
+  "totalCount": 3,
+  "page": 1,
+  "pageSize": 10
+}

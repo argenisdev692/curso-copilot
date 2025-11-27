@@ -1,0 +1,111 @@
+# Lista de Extensiones VSCode para el Curso GitHub Copilot 2025
+# 🎯 EXTENSIONES ESENCIALES - OBLIGATORIAS
+
+# 1. GitHub Copilot (Pack Completo)
+# GitHub Copilot - Autocompletado con IA
+GitHub.copilot
+# GitHub Copilot Chat - Asistente conversacional
+GitHub.copilot-chat
+# GitHub Copilot MCP - Integración con Model Context Protocol
+GitHub.copilot-mcp
+
+# 2. Desarrollo .NET / C#
+# C# Dev Kit - Suite completa para desarrollo C# (incluye C#, IntelliCode para C#)
+ms-dotnettools.csharp
+# C# Dev Kit
+ms-dotnettools.csdevkit
+# .NET Runtime
+ms-dotnettools.vscode-dotnet-runtime
+# NuGet Package Manager - Gestión de paquetes NuGet
+ms-vscode.vscode-nuget-gallery
+
+# 3. Desarrollo Angular / TypeScript
+# TypeScript and JavaScript Language Features
+ms-vscode.vscode-typescript-next
+# Angular Language Service - IntelliSense para templates Angular
+angular.ng-template
+# Angular Snippets - Snippets para desarrollo Angular
+johnpapa.angular2
+
+# 4. Calidad de Código
+# ESLint - Linting para TypeScript/JavaScript
+dbaeumer.vscode-eslint
+# Prettier - Code formatter - Formateo automático de código
+esbenp.prettier-vscode
+# EditorConfig for VS Code - Mantener consistencia en el equipo
+EditorConfig.EditorConfig
+
+# 🔧 EXTENSIONES IMPORTANTES - ALTAMENTE RECOMENDADAS
+
+# 5. Testing
+# Test Explorer UI - Interfaz unificada para tests
+hbenl.vscode-test-explorer
+# Test Adapter Converter
+ms-vscode.test-adapter-converter
+
+# 6. Docker y Contenedores
+# Docker (Container Tools de Microsoft) - Gestión de contenedores
+ms-azuretools.vscode-docker
+# Dev Containers - Desarrollo en contenedores
+ms-vscode-remote.remote-containers
+
+# 7. Control de Versiones y CI/CD
+# GitLens - Superpoderes para Git
+eamodio.gitlens
+# GitHub Actions - Soporte para workflows
+ms-vscode.vscode-github-actions
+
+# 8. Productividad General
+# Path Intellisense - Autocompletado de rutas de archivos
+christian-kohler.path-intellisense
+# Error Lens - Mostrar errores inline
+usernamehw.errorlens
+# Todo Tree - Gestión de tareas
+gruntfuggly.todo-tree
+# Peacock - Cambiar color del editor por proyecto
+johnpapa.vscode-peacock
+
+# 🎨 EXTENSIONES OPCIONALES - ÚTILES
+
+# 9. Documentación
+# Markdown All in One - Para READMEs y documentación
+yzhang.markdown-all-in-one
+# markdownlint - Linting para Markdown
+davidanson.vscode-markdownlint
+
+# 10. Depuración Avanzada
+# JavaScript Debugger (incluido por defecto en VS Code moderno)
+
+# 11. Específicas para el Curso
+# Better Comments - Comentarios categorizados (útil para prompt engineering)
+aaron-bond.better-comments
+# Import Cost - Ver tamaño de paquetes importados
+wix.vscode-import-cost
+# JSON Language Features
+ms-vscode.vscode-json
+# Material Icon Theme - Íconos para archivos
+PKief.material-icon-theme
+# Tailwind CSS IntelliSense
+bradlc.vscode-tailwindcss
+# NPM IntelliSense
+christian-kohler.npm-intellisense
+# Auto Rename Tag
+formulahendry.auto-rename-tag
+# Auto Close Tag
+formulahendry.auto-close-tag
+# REST Client - Probar APIs sin salir de VS Code
+humao.rest-client
+# Live Share
+ms-vscode.live-share
+# PowerShell
+ms-vscode.powershell
+# JavaScript Profiler
+ms-vscode.vscode-js-profile-flame
+# YAML
+redhat.vscode-yaml
+# Live Server - Servidor local para desarrollo web
+ritwickdey.LiveServer
+# Code Spell Checker
+streetsidesoftware.code-spell-checker
+# One Dark Pro - Tema moderno
+zhuangtongfa.material-theme
