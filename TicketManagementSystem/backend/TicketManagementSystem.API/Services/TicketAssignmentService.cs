@@ -4,6 +4,8 @@ using TicketManagementSystem.API.Data;
 using TicketManagementSystem.API.Helpers;
 using TicketManagementSystem.API.Models;
 using TicketManagementSystem.API.Repositories;
+using TicketManagementSystem.API.Infrastructure.RabbitMQ;
+using TicketManagementSystem.API.Events;
 
 namespace TicketManagementSystem.API.Services
 {
@@ -16,6 +18,7 @@ namespace TicketManagementSystem.API.Services
         private readonly IUnitOfWork _unitOfWork;
         private readonly ITicketRepository _ticketRepository;
         private readonly ApplicationDbContext _context;
+        private readonly IRabbitMQPublisher _publisher;
 
         /// <summary>
         /// Constructor del servicio.
@@ -23,16 +26,19 @@ namespace TicketManagementSystem.API.Services
         /// <param name="unitOfWork">Unidad de trabajo para acceso a datos.</param>
         /// <param name="ticketRepository">Repositorio de tickets.</param>
         /// <param name="context">Contexto de base de datos.</param>
+        /// <param name="publisher">Publicador de eventos RabbitMQ.</param>
         /// <param name="logger">Logger para registro de eventos.</param>
         public TicketAssignmentService(
             IUnitOfWork unitOfWork,
             ITicketRepository ticketRepository,
             ApplicationDbContext context,
+            IRabbitMQPublisher publisher,
             ILogger<TicketAssignmentService> logger) : base(logger)
         {
             _unitOfWork = unitOfWork;
             _ticketRepository = ticketRepository;
             _context = context;
+            _publisher = publisher;
         }
 
         /// <summary>
@@ -107,6 +113,15 @@ namespace TicketManagementSystem.API.Services
             await _unitOfWork.SaveChangesAsync();
 
             LogInformation("Ticket {TicketId} asignado exitosamente a usuario {UserId}", ticketId, userId);
+
+            // Publicar evento de ticket asignado
+            var ticketAssignedEvent = new TicketAssignedEvent(
+                ticketId: ticketId,
+                assignedToId: userId,
+                assignedById: userId, // Asumiendo que el asignador es el mismo usuario, ajustar si es diferente
+                correlationId: Guid.NewGuid().ToString());
+
+            await _publisher.PublishAsync(ticketAssignedEvent, cancellationToken: ct);
 
             return ticket;
         }

@@ -1,5 +1,7 @@
+using System;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
+using System.Security.Cryptography;
 using System.Text;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
@@ -47,14 +49,19 @@ namespace TicketManagementSystem.API.Services
             }
 
             var token = _jwtTokenService.GenerateJwtToken(user);
-            var refreshToken = _jwtTokenService.GenerateRefreshToken();
+            var refreshTokenValue = _jwtTokenService.GenerateRefreshToken();
+
+            // Store the refresh token securely
+            var refreshTokenExpiry = DateTime.UtcNow.AddDays(int.Parse(_configuration["Jwt:RefreshTokenExpiryInDays"] ?? "7"));
+            var tokenHash = HashToken(refreshTokenValue);
+            await _jwtTokenService.StoreRefreshTokenAsync(user.Id, tokenHash, refreshTokenExpiry);
 
             LogInformation("User {Email} logged in successfully", email);
 
             return new LoginResponseDto
             {
                 Token = token,
-                RefreshToken = refreshToken,
+                RefreshToken = refreshTokenValue,
                 ExpiresAt = DateTime.UtcNow.AddMinutes(int.Parse(_configuration["Jwt:ExpiryInMinutes"] ?? "60")),
                 User = new UserBasicDto
                 {
@@ -116,41 +123,64 @@ namespace TicketManagementSystem.API.Services
         /// <inheritdoc />
         public async Task<RefreshTokenResponseDto> RefreshTokenAsync(string refreshToken)
         {
-            // In a production system, you would:
-            // 1. Validate the refresh token from a secure store (database/redis)
-            // 2. Check if it's not expired
-            // 3. Generate new access token
-            // 4. Optionally rotate the refresh token
+            LogInformation("Attempting token refresh");
 
-            // For now, we'll return a basic response
-            LogWarning("Refresh token functionality called but not fully implemented");
-
-            return await Task.FromResult(new RefreshTokenResponseDto
+            var user = await _jwtTokenService.ValidateRefreshTokenAsync(refreshToken);
+            if (user == null)
             {
-                Token = "new-jwt-token-would-be-generated-here",
-                RefreshToken = Guid.NewGuid().ToString(),
-                ExpiresAt = DateTime.UtcNow.AddMinutes(60)
-            });
+                LogWarning("Invalid or expired refresh token");
+                throw new UnauthorizedAccessException("Invalid refresh token");
+            }
+
+            // Generate new tokens
+            var newJwtToken = _jwtTokenService.GenerateJwtToken(user);
+            var newRefreshTokenValue = _jwtTokenService.GenerateRefreshToken();
+
+            // Revoke old refresh token
+            var oldTokenHash = HashToken(refreshToken);
+            await _jwtTokenService.RevokeRefreshTokenAsync(oldTokenHash, "Token refresh");
+
+            // Store new refresh token
+            var refreshTokenExpiry = DateTime.UtcNow.AddDays(int.Parse(_configuration["Jwt:RefreshTokenExpiryInDays"] ?? "7"));
+            var newTokenHash = HashToken(newRefreshTokenValue);
+            await _jwtTokenService.StoreRefreshTokenAsync(user.Id, newTokenHash, refreshTokenExpiry);
+
+            LogInformation("Token refreshed successfully for user {Email}", user.Email);
+
+            return new RefreshTokenResponseDto
+            {
+                Token = newJwtToken,
+                RefreshToken = newRefreshTokenValue,
+                ExpiresAt = DateTime.UtcNow.AddMinutes(int.Parse(_configuration["Jwt:ExpiryInMinutes"] ?? "60"))
+            };
         }
 
         /// <inheritdoc />
         public async Task LogoutAsync(string refreshToken)
         {
-            var tokenPreview = !string.IsNullOrEmpty(refreshToken) && refreshToken.Length >= 10 
-                ? refreshToken.Substring(0, 10) 
+            var tokenPreview = !string.IsNullOrEmpty(refreshToken) && refreshToken.Length >= 10
+                ? refreshToken.Substring(0, 10)
                 : refreshToken ?? "null";
-            
+
             LogInformation("Logout requested for refresh token: {RefreshToken}", tokenPreview);
 
-            // In a production system, you would:
-            // 1. Remove/invalidate the refresh token from secure store (database/redis)
-            // 2. Optionally add the JWT to a blacklist with expiration
-            // 3. Clear any user session data
-            
-            // For now, just log the action
+            // Revoke the refresh token
+            var tokenHash = HashToken(refreshToken);
+            await _jwtTokenService.RevokeRefreshTokenAsync(tokenHash, "User logout");
+
             LogInformation("Refresh token invalidated successfully");
 
             await Task.CompletedTask;
+        }
+
+        /// <summary>
+        /// Hashes a token using SHA256 for secure storage
+        /// </summary>
+        private static string HashToken(string token)
+        {
+            using var sha256 = System.Security.Cryptography.SHA256.Create();
+            var hashBytes = sha256.ComputeHash(System.Text.Encoding.UTF8.GetBytes(token));
+            return Convert.ToBase64String(hashBytes);
         }
     }
 }

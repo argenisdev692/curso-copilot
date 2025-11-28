@@ -24,6 +24,7 @@ namespace TicketManagementSystem.API.Data
         public DbSet<Comment> Comments { get; set; } = null!;
         public DbSet<TicketHistory> TicketHistories { get; set; } = null!;
         public DbSet<Role> Roles { get; set; } = null!;
+        public DbSet<RefreshToken> RefreshTokens { get; set; } = null!;
 
         protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
         {
@@ -82,6 +83,12 @@ namespace TicketManagementSystem.API.Data
                 // Composite index for combined filters
                 entity.HasIndex(t => new { t.Status, t.Priority });
 
+                // Additional composite indexes for performance optimization
+                entity.HasIndex(t => new { t.Status, t.CreatedAt });
+                entity.HasIndex(t => new { t.Priority, t.CreatedAt });
+                entity.HasIndex(t => new { t.AssignedToId, t.Status });
+                entity.HasIndex(t => t.UpdatedAt); // For sorting by updated date
+
                 // Global query filter for soft delete
                 entity.HasQueryFilter(t => !t.IsDeleted);
 
@@ -133,6 +140,28 @@ namespace TicketManagementSystem.API.Data
 
                 // Global query filter for soft delete
                 entity.HasQueryFilter(r => !r.IsDeleted);
+            });
+
+            // RefreshToken configurations
+            modelBuilder.Entity<RefreshToken>(entity =>
+            {
+                // Index on TokenHash for fast lookup
+                entity.HasIndex(rt => rt.TokenHash).IsUnique();
+
+                // Index on UserId for cleanup
+                entity.HasIndex(rt => rt.UserId);
+
+                // Index on ExpiresAt for cleanup of expired tokens
+                entity.HasIndex(rt => rt.ExpiresAt);
+
+                // Composite index for active tokens by user
+                entity.HasIndex(rt => new { rt.UserId, rt.IsRevoked, rt.ExpiresAt });
+
+                // Relationship with User
+                entity.HasOne(rt => rt.User)
+                    .WithMany()
+                    .HasForeignKey(rt => rt.UserId)
+                    .OnDelete(DeleteBehavior.Cascade);
             });
 
 

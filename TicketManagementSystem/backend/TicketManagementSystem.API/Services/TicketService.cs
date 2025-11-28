@@ -5,6 +5,8 @@ using TicketManagementSystem.API.DTOs;
 using TicketManagementSystem.API.Helpers;
 using TicketManagementSystem.API.Models;
 using TicketManagementSystem.API.Repositories;
+using TicketManagementSystem.API.Infrastructure.RabbitMQ;
+using TicketManagementSystem.API.Events;
 
 namespace TicketManagementSystem.API.Services
 {
@@ -18,6 +20,8 @@ namespace TicketManagementSystem.API.Services
         private readonly ITicketBusinessRules _businessRules;
         private readonly ITicketMapper _mapper;
         private readonly ApplicationDbContext _context;
+        private readonly IRabbitMQPublisher _publisher;
+        private readonly ICacheHelper _cacheHelper;
 
         public TicketService(
             ITicketRepository ticketRepository,
@@ -25,6 +29,8 @@ namespace TicketManagementSystem.API.Services
             ITicketBusinessRules businessRules,
             ITicketMapper mapper,
             ApplicationDbContext context,
+            IRabbitMQPublisher publisher,
+            ICacheHelper cacheHelper,
             ILogger<TicketService> logger) : base(logger)
         {
             _ticketRepository = ticketRepository;
@@ -32,6 +38,8 @@ namespace TicketManagementSystem.API.Services
             _businessRules = businessRules;
             _mapper = mapper;
             _context = context;
+            _publisher = publisher;
+            _cacheHelper = cacheHelper;
         }
 
         /// <inheritdoc />
@@ -39,19 +47,35 @@ namespace TicketManagementSystem.API.Services
         {
             try
             {
-                var pagedTickets = await _ticketRepository.GetAllAsync(parameters, CancellationToken.None);
+                // Generar clave de cache única
+                var cacheKey = GenerateCacheKey(parameters);
 
-                // Map to DTOs using dedicated mapper
-                var ticketDtos = _mapper.MapToDtos(pagedTickets.Items);
+                // Intentar obtener del cache
+                var cachedResult = await _cacheHelper.GetAsync<PagedResponse<TicketDto>>(cacheKey);
+                if (cachedResult != null)
+                {
+                    LogOperationSuccess(0, 0, $"Cache hit for tickets query: {cacheKey}");
+                    return Result<PagedResponse<TicketDto>>.Success(cachedResult);
+                }
+
+                // Query optimizada usando read models
+                var pagedReadModels = await _ticketRepository.GetAllOptimizedAsync(parameters, CancellationToken.None);
+
+                // Mapear read models a DTOs
+                var ticketDtos = MapReadModelsToDtos(pagedReadModels.Items);
 
                 var result = new PagedResponse<TicketDto>
                 {
-                    Items = ticketDtos.ToList(),
-                    TotalItems = pagedTickets.TotalItems,
-                    Page = pagedTickets.Page,
-                    PageSize = pagedTickets.PageSize
+                    Items = ticketDtos,
+                    TotalItems = pagedReadModels.TotalItems,
+                    Page = pagedReadModels.Page,
+                    PageSize = pagedReadModels.PageSize
                 };
 
+                // Cachear resultado por 5 minutos
+                await _cacheHelper.SetAsync(cacheKey, result, TimeSpan.FromMinutes(5));
+
+                LogOperationSuccess(0, 0, $"Query executed and cached: {cacheKey}");
                 return Result<PagedResponse<TicketDto>>.Success(result);
             }
             catch (Exception ex)
@@ -59,6 +83,42 @@ namespace TicketManagementSystem.API.Services
                 LogError(ex, "Error retrieving tickets");
                 return Result<PagedResponse<TicketDto>>.Failure(ex.Message, "DatabaseError");
             }
+        }
+
+        private static string GenerateCacheKey(GetTicketsQueryParameters parameters)
+        {
+            // Crear hash de parámetros para clave única
+            var keyComponents = new[]
+            {
+                parameters.Page.ToString(),
+                parameters.PageSize.ToString(),
+                parameters.Status ?? "all",
+                parameters.PriorityId?.ToString() ?? "all",
+                parameters.AssignedTo?.ToString() ?? "all",
+                parameters.Search ?? "none",
+                parameters.SortBy ?? "createdat",
+                parameters.SortOrder ?? "desc"
+            };
+
+            var combined = string.Join("|", keyComponents);
+            return $"tickets:{System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(combined)).ToString().Substring(0, 16)}";
+        }
+
+        private List<TicketDto> MapReadModelsToDtos(IEnumerable<TicketReadModel> readModels)
+        {
+            return readModels.Select(rm => new TicketDto
+            {
+                Id = rm.Id,
+                Title = rm.Title,
+                Description = rm.Description,
+                Status = rm.Status.ToString(),
+                Priority = rm.PriorityName,
+                CreatedBy = rm.CreatedByName,
+                AssignedTo = rm.AssignedToName,
+                CommentCount = rm.CommentCount,
+                CreatedAt = rm.CreatedAt,
+                UpdatedAt = rm.UpdatedAt
+            }).ToList();
         }
 
         /// <inheritdoc />
@@ -83,6 +143,26 @@ namespace TicketManagementSystem.API.Services
                 await _businessRules.CreateTicketHistoryAsync(createdTicket, "Ticket created", createdByUserId, ct);
 
                 LogOperationSuccess(createdTicket.Id, createdByUserId, "CreateTicket");
+
+                // Publicar evento de ticket creado
+                var ticketCreatedEvent = new TicketCreatedEvent(
+                    ticketId: createdTicket.Id,
+                    title: createdTicket.Title,
+                    description: createdTicket.Description,
+                    priority: createdTicket.Priority.ToString(),
+                    createdById: createdTicket.CreatedById,
+                    assignedToId: createdTicket.AssignedToId,
+                    correlationId: Guid.NewGuid().ToString());
+
+                await _publisher.PublishAsync(ticketCreatedEvent, cancellationToken: ct);
+
+                // Publicar evento de invalidación de cache
+                var cacheInvalidationEvent = new TicketCacheInvalidationEvent(
+                    action: "create",
+                    ticketId: createdTicket.Id,
+                    correlationId: ticketCreatedEvent.CorrelationId);
+
+                await _publisher.PublishAsync(cacheInvalidationEvent, cancellationToken: ct);
 
                 return Result<Ticket>.Success(createdTicket);
             }
@@ -130,6 +210,19 @@ namespace TicketManagementSystem.API.Services
                 }
 
                 LogInformation("Ticket {TicketId} updated", id);
+
+                // Publicar evento si el status cambió
+                if (oldStatus != ticket.Status)
+                {
+                    var ticketStatusChangedEvent = new TicketStatusChangedEvent(
+                        ticketId: ticket.Id,
+                        oldStatus: oldStatus.ToString(),
+                        newStatus: ticket.Status.ToString(),
+                        changedById: 0, // TODO: Obtener el usuario actual
+                        correlationId: Guid.NewGuid().ToString());
+
+                    await _publisher.PublishAsync(ticketStatusChangedEvent, cancellationToken: ct);
+                }
 
                 return Result<Ticket>.Success(ticket);
             }

@@ -48,5 +48,13 @@ namespace TicketManagementSystem.API.Repositories
         /// <param name="ticket">Ticket to update</param>
         /// <param name="ct">Cancellation token</param>
         Task UpdateAsync(Ticket ticket, CancellationToken ct);
+
+        /// <summary>
+        /// Get paginated tickets optimized with read models
+        /// </summary>
+        /// <param name="parameters">Query parameters</param>
+        /// <param name="ct">Cancellation token</param>
+        /// <returns>Paged response of ticket read models</returns>
+        Task<PagedResponse<TicketReadModel>> GetAllOptimizedAsync(GetTicketsQueryParameters parameters, CancellationToken ct);
     }
 }

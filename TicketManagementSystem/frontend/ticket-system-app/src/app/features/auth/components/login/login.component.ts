@@ -4,6 +4,7 @@ import { ReactiveFormsModule, FormBuilder, FormGroup, Validators } from '@angula
 import { Router, ActivatedRoute, RouterLink } from '@angular/router';
 import { AuthState } from '../../../../core/authentication/state/auth.state';
 import { AuthService } from '../../../../core/authentication/services/auth.service';
+import { LoggerService } from '../../../../core/services/logger.service';
 import { LoginRequest } from '../../../../shared/models/common/auth.interface';
 
 /**
@@ -196,6 +197,7 @@ export class LoginComponent implements OnInit {
     private fb: FormBuilder,
     private authService: AuthService,
     private authState: AuthState,
+    private logger: LoggerService,
     private router: Router,
     private route: ActivatedRoute
   ) {
@@ -242,12 +244,12 @@ export class LoginComponent implements OnInit {
 
       const credentials: LoginRequest = this.loginForm.value;
 
-      console.log('🔐 Attempting login with:', credentials.email);
+      this.logger.log('info', 'Attempting login', { email: credentials.email });
 
       try {
         const response = await this.authService.login(credentials);
-        console.log('✅ Login successful:', response);
-        console.log('🔍 Auth state after login:', {
+        this.logger.log('info', 'Login successful', { response });
+        this.logger.log('info', 'Auth state after login', {
           isAuthenticated: this.authState.isAuthenticated(),
           user: this.authState.currentUser()
         });
@@ -258,32 +260,32 @@ export class LoginComponent implements OnInit {
 
           // Navigate to returnUrl or dashboard
           const returnUrl = this.route.snapshot.queryParams['returnUrl'] || '/dashboard';
-          console.log('🚀 Navigating to:', returnUrl);
-          console.log('🔍 Auth state before navigation:', {
+          this.logger.log('info', 'Navigating to', { returnUrl });
+          this.logger.log('info', 'Auth state before navigation', {
             isAuthenticated: this.authState.isAuthenticated(),
             hasUser: !!this.authState.currentUser()
           });
 
           this.router.navigate([returnUrl]).then(
             success => {
-              console.log('✅ Navigation result:', success);
+              this.logger.log('info', 'Navigation result', { success });
               if (!success) {
-                console.error('❌ Navigation was blocked. Auth state:', {
+                this.logger.log('error', 'Navigation was blocked', {
                   isAuthenticated: this.authState.isAuthenticated(),
                   user: this.authState.currentUser()
                 });
               }
             },
-            error => console.error('❌ Navigation failed with error:', error)
+            error => this.logger.log('error', 'Navigation failed', { error })
           );
         }, 100);
       } catch (error) {
-        console.error('❌ Login failed:', error);
+        this.logger.log('error', 'Login failed', { error });
         this.authState.setLoading(false);
         this.authState.setError((error as any).message || 'Login failed');
       }
     } else {
-      console.warn('⚠️ Form is invalid');
+      this.logger.log('warn', 'Form is invalid');
       this.markFormGroupTouched();
     }
   }

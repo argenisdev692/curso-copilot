@@ -1,0 +1,97 @@
+version: '3.8'
+
+# Docker Compose para API .NET 8 con SQL Server
+# Incluye migraciones automáticas, health checks y variables de entorno
+
+services:
+  # Servicio de la API
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ticket-api
+    ports:
+      - "8080:80"  # Mapear puerto 8080 del host al 80 del contenedor
+      - "8443:443" # HTTPS si es necesario
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - ASPNETCORE_URLS=http://+:80;https://+:443
+      - ConnectionStrings__DefaultConnection=Server=db;Database=TicketManagementDb;User Id=sa;Password=${SA_PASSWORD};TrustServerCertificate=True;
+      # Configuración RabbitMQ
+      - RabbitMQ__HostName=${RABBITMQ_HOSTNAME}
+      - RabbitMQ__Port=${RABBITMQ_PORT}
+      - RabbitMQ__UserName=${RABBITMQ_USERNAME}
+      - RabbitMQ__Password=${RABBITMQ_PASSWORD}
+      - RabbitMQ__VirtualHost=${RABBITMQ_VIRTUALHOST}
+      - RabbitMQ__ExchangeName=${RABBITMQ_EXCHANGENAME}
+      - RabbitMQ__RetryCount=${RABBITMQ_RETRYCOUNT}
+      - RabbitMQ__RetryDelayMs=${RABBITMQ_RETRYDELAYMS}
+      # Otras variables de entorno según appsettings.json
+    depends_on:
+      db:
+        condition: service_healthy  # Esperar a que DB esté saludable
+      rabbitmq:
+        condition: service_healthy  # Esperar a que RabbitMQ esté saludable
+    networks:
+      - ticket-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Servicio de base de datos SQL Server
+  db:
+    image: mcr.microsoft.com/mssql/server:latest
+    container_name: ticket-db
+    environment:
+      - ACCEPT_EULA=Y
+      - SA_PASSWORD=${SA_PASSWORD}  # Contraseña del usuario sa, debe ser fuerte
+      - MSSQL_PID=Express  # Usar Express edition para desarrollo
+    ports:
+      - "1433:1433"  # Puerto estándar de SQL Server
+    volumes:
+      - sqlserver_data:/var/opt/mssql  # Volumen persistente para datos
+    networks:
+      - ticket-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P ${SA_PASSWORD} -Q 'SELECT 1'"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  # Servicio de mensajería RabbitMQ
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: ticketsystem-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USERNAME}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
+    ports:
+      - "5672:5672"  # Puerto AMQP
+      - "15672:15672"  # Puerto de administración
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq  # Volumen persistente para datos
+    networks:
+      - ticket-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+# Volúmenes para persistencia de datos
+volumes:
+  sqlserver_data:
+  rabbitmq_data:
+
+# Red personalizada para comunicación entre servicios
+networks:
+  ticket-network:
+    driver: bridge

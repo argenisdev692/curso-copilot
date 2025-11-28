@@ -19,6 +19,11 @@ using AspNetCoreRateLimit;
 using Swashbuckle.AspNetCore.Filters;
 using Microsoft.OpenApi.Models;
 using TicketManagementSystem.API.DTOs;
+using TicketManagementSystem.API.Extensions;
+// Monitoring and Observability
+using Microsoft.ApplicationInsights.Extensibility;
+using Prometheus;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -68,6 +73,18 @@ Log.Logger = new LoggerConfiguration()
 
 builder.Host.UseSerilog();
 
+// Add Application Insights Telemetry
+builder.Services.AddApplicationInsightsTelemetry();
+
+// Configure Application Insights
+builder.Services.AddApplicationInsightsTelemetry(options =>
+{
+    options.ConnectionString = builder.Configuration["ApplicationInsights:ConnectionString"];
+});
+
+// Configure Telemetry
+builder.Services.AddSingleton<ITelemetryInitializer, CustomTelemetryInitializer>();
+
 // Add services to the container.
 builder.Services.AddControllers();
 
@@ -109,7 +126,8 @@ builder.Services.AddSingleton<CacheHelper>();
 
 // Add DbContext
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
-    options.UseSqlite(builder.Configuration.GetConnectionString("DefaultConnection")));
+    options.UseSqlite(builder.Configuration.GetConnectionString("DefaultConnection"))
+        .AddInterceptors(new AuditSaveChangesInterceptor()));
 
 // Add AutoMapper
 builder.Services.AddAutoMapper(typeof(TicketMappingProfile), typeof(RoleMappingProfile));
@@ -141,6 +159,7 @@ builder.Services.AddScoped<ITicketRepository, TicketRepository>();
 builder.Services.AddScoped<IUserRepository, UserRepository>();
 builder.Services.AddScoped<ICommentRepository, CommentRepository>();
 builder.Services.AddScoped<IRoleRepository, RoleRepository>();
+builder.Services.AddScoped<IRefreshTokenRepository, RefreshTokenRepository>();
 builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
 builder.Services.AddScoped<ITicketService, TicketService>();
 builder.Services.AddScoped<ICommentService, CommentService>();
@@ -160,6 +179,13 @@ builder.Services.AddHostedService<EmailNotificationService>();
 
 // Configure options
 builder.Services.Configure<SmtpSettings>(builder.Configuration.GetSection("SmtpSettings"));
+builder.Services.Configure<TavilySettings>(builder.Configuration.GetSection("Tavily"));
+
+// Add HttpClient
+builder.Services.AddHttpClient();
+
+// Register Tavily service
+builder.Services.AddScoped<ITavilyService, TavilyService>();
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
@@ -225,7 +251,23 @@ builder.Services.AddCors(options =>
 });
 
 // Add Health Checks
-builder.Services.AddHealthChecks();
+builder.Services.AddHealthChecks()
+    .AddDbContextCheck<ApplicationDbContext>("database")
+    .AddRabbitMQ(builder.Configuration.GetSection("RabbitMQ").Get<RabbitMQSettings>()?.HostName ?? "localhost")
+    .AddApplicationInsightsPublisher();
+
+// Add Prometheus Metrics
+if (builder.Configuration.GetValue<bool>("Monitoring:EnablePrometheus"))
+{
+    builder.Services.UseHttpClientMetrics();
+    builder.Services.AddMetrics();
+}
+
+// Add Custom Metrics Service
+builder.Services.AddSingleton<IMetricsService, MetricsService>();
+
+// Add RabbitMQ Services
+builder.Services.AddRabbitMQServices(builder.Configuration);
 
 // Add Problem Details
 builder.Services.AddProblemDetails();
@@ -268,6 +310,9 @@ app.UseIpRateLimiting();
 // Use Request Logging Middleware with sensitive data sanitization
 app.UseMiddleware<RequestLoggingMiddleware>();
 
+// Use Request Metrics Middleware
+app.UseRequestMetrics();
+
 // Add security middleware
 // app.UseMiddleware<SecurityMiddleware>();
 
@@ -308,6 +353,25 @@ app.MapControllers();
 
 // Health check endpoint
 app.MapHealthChecks("/health");
+
+// Metrics endpoints
+if (builder.Configuration.GetValue<bool>("Monitoring:EnablePrometheus"))
+{
+    app.UseMetricServer();
+    app.UseHttpMetrics();
+}
+
+// Custom metrics endpoint
+app.MapGet("/metrics/custom", async (IMetricsService metricsService) =>
+{
+    return await metricsService.GetCustomMetricsAsync();
+});
+
+// DORA metrics endpoint
+app.MapGet("/metrics/dora", async (IMetricsService metricsService) =>
+{
+    return await metricsService.GetDoraMetricsAsync();
+});
 
 // Security monitoring endpoint
 app.MapGet("/api/security/status", () => 

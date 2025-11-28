@@ -1,0 +1,400 @@
+# Azure DevOps Pipeline para .NET 8 API con EF Core
+# CI/CD completo: build, test, deploy a Azure App Service con slots
+
+# Triggers: Ejecutar en push a main y PRs
+trigger:
+  branches:
+    include:
+      - main
+  paths:
+    include:
+      - TicketManagementSystem/backend/*
+
+pr:
+  branches:
+    include:
+      - main
+  paths:
+    include:
+      - TicketManagementSystem/backend/*
+
+# Variables globales
+variables:
+  buildConfiguration: 'Release'
+  dotnetVersion: '8.x'
+  projectPath: 'TicketManagementSystem/backend/TicketManagementSystem.API'
+  testResultsPath: 'test-results'
+  coverageResultsPath: 'coverage-results'
+  ApplicationInsightsInstrumentationKey: 'tu-instrumentation-key'  # Configurar en Azure DevOps variables
+  ApplicationInsightsConnectionString: 'InstrumentationKey=tu-key;IngestionEndpoint=https://westeurope-1.in.applicationinsights.azure.com/;LiveEndpoint=https://westeurope.livediagnostics.monitor.azure.com/'  # Configurar en variables
+
+# Stages del pipeline
+stages:
+  # Stage 1: Restore y Build
+  - stage: RestoreBuild
+    displayName: 'Restore y Build'
+    jobs:
+      - job: Build
+        displayName: 'Build .NET API'
+        pool:
+          vmImage: 'windows-latest'  # O 'ubuntu-latest' si prefieres Linux
+        steps:
+          # Instalar .NET 8
+          - task: UseDotNet@2
+            displayName: 'Instalar .NET 8.x'
+            inputs:
+              version: $(dotnetVersion)
+
+          # Restaurar dependencias
+          - task: DotNetCoreCLI@2
+            displayName: 'dotnet restore'
+            inputs:
+              command: 'restore'
+              projects: '$(projectPath)/*.csproj'
+
+          # Build en Release
+          - task: DotNetCoreCLI@2
+            displayName: 'dotnet build'
+            inputs:
+              command: 'build'
+              projects: '$(projectPath)/*.csproj'
+              arguments: '--configuration $(buildConfiguration) --no-restore'
+
+          # Publicar para artifact
+          - task: DotNetCoreCLI@2
+            displayName: 'dotnet publish'
+            inputs:
+              command: 'publish'
+              publishWebProjects: false
+              projects: '$(projectPath)/*.csproj'
+              arguments: '--configuration $(buildConfiguration) --output $(Build.ArtifactStagingDirectory) --no-build'
+              zipAfterPublish: true
+
+          # Publicar artifact
+          - task: PublishBuildArtifacts@1
+            displayName: 'Publicar artifact de build'
+            inputs:
+              PathtoPublish: '$(Build.ArtifactStagingDirectory)'
+              ArtifactName: 'drop'
+              publishLocation: 'Container'
+
+  # Stage 2: Test con Code Coverage
+  - stage: Test
+    displayName: 'Test y Code Coverage'
+    dependsOn: RestoreBuild
+    jobs:
+      - job: Test
+        displayName: 'Ejecutar tests'
+        pool:
+          vmImage: 'windows-latest'
+        steps:
+          # Instalar .NET 8
+          - task: UseDotNet@2
+            displayName: 'Instalar .NET 8.x'
+            inputs:
+              version: $(dotnetVersion)
+
+          # Restaurar dependencias de tests
+          - task: DotNetCoreCLI@2
+            displayName: 'dotnet restore tests'
+            inputs:
+              command: 'restore'
+              projects: '**/*Tests.csproj'
+
+          # Ejecutar tests con code coverage
+          - task: DotNetCoreCLI@2
+            displayName: 'dotnet test con coverage'
+            inputs:
+              command: 'test'
+              projects: '**/*Tests.csproj'
+              arguments: '--configuration $(buildConfiguration) --collect:"XPlat Code Coverage" --results-directory $(testResultsPath) --logger trx'
+
+          # Publicar resultados de tests
+          - task: PublishTestResults@2
+            displayName: 'Publicar resultados de tests'
+            inputs:
+              testResultsFiles: '**/*.trx'
+              testRunTitle: 'Tests .NET 8'
+              failTaskOnFailedTests: true
+
+          # Publicar code coverage (V2 - nueva versión recomendada)
+          - task: PublishCodeCoverageResults@2
+            displayName: 'Publicar code coverage'
+            inputs:
+              summaryFileLocation: '$(testResultsPath)/**/coverage.cobertura.xml'
+
+  # Stage 3: Deploy a Staging
+  - stage: DeployStaging
+    displayName: 'Deploy a Staging'
+    dependsOn: Test
+    condition: and(succeeded(), ne(variables['Build.Reason'], 'PullRequest'))
+    jobs:
+      - deployment: DeployStaging
+        displayName: 'Deploy a Staging Slot'
+        environment: 'staging'
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                # Descargar artifact
+                - task: DownloadBuildArtifacts@0
+                  displayName: 'Descargar artifact'
+                  inputs:
+                    downloadType: 'single'
+                    artifactName: 'drop'
+                    downloadPath: '$(System.ArtifactsDirectory)'
+
+                # Deploy a Azure App Service (Staging Slot)
+                - task: AzureWebApp@1
+                  displayName: 'Deploy a Staging Slot'
+                  inputs:
+                    azureSubscription: 'tu-subscription-service-connection'  # Configurar en Azure DevOps
+                    appName: 'tu-app-service-name'  # Nombre de tu App Service
+                    resourceGroupName: 'tu-resource-group'
+                    slotName: 'staging'
+                    package: '$(System.ArtifactsDirectory)/drop'
+
+                # Configurar Application Insights en Staging
+                - task: AzureAppServiceSettings@1
+                  displayName: 'Configurar Application Insights en Staging'
+                  inputs:
+                    azureSubscription: 'tu-subscription-service-connection'
+                    appName: 'tu-app-service-name'
+                    resourceGroupName: 'tu-resource-group'
+                    slotName: 'staging'
+                    appSettings: |
+                      [
+                        {
+                          "name": "APPINSIGHTS_INSTRUMENTATIONKEY",
+                          "value": "$(ApplicationInsightsInstrumentationKey)",
+                          "slotSetting": false
+                        },
+                        {
+                          "name": "ApplicationInsights__ConnectionString",
+                          "value": "$(ApplicationInsightsConnectionString)",
+                          "slotSetting": false
+                        }
+                      ]
+
+  # Stage 4: Deploy a Production (manual approval)
+  - stage: DeployProduction
+    displayName: 'Deploy a Production'
+    dependsOn: DeployStaging
+    condition: and(succeeded(), ne(variables['Build.Reason'], 'PullRequest'))
+    jobs:
+      - deployment: DeployProduction
+        displayName: 'Deploy a Production Slot'
+        environment: 'production'
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                # Aprobar manualmente antes de deploy a prod
+                - task: ManualValidation@0
+                  displayName: 'Aprobación manual para Production'
+                  inputs:
+                    notifyUsers: 'tu-email@domain.com'  # Email para notificación
+                    instructions: 'Revisar el deploy en Staging antes de aprobar Production'
+
+                # Swap slots: Staging -> Production
+                - task: AzureAppServiceManage@0
+                  displayName: 'Swap Staging a Production'
+                  inputs:
+                    azureSubscription: 'tu-subscription-service-connection'
+                    WebAppName: 'tu-app-service-name'
+                    ResourceGroupName: 'tu-resource-group'
+                    SourceSlot: 'staging'
+                    SwapWithProduction: true
+
+                # Configurar Application Insights en Production
+                - task: AzureAppServiceSettings@1
+                  displayName: 'Configurar Application Insights en Production'
+                  inputs:
+                    azureSubscription: 'tu-subscription-service-connection'
+                    appName: 'tu-app-service-name'
+                    resourceGroupName: 'tu-resource-group'
+                    appSettings: |
+                      [
+                        {
+                          "name": "APPINSIGHTS_INSTRUMENTATIONKEY",
+                          "value": "$(ApplicationInsightsInstrumentationKey)",
+                          "slotSetting": false
+                        },
+                        {
+                          "name": "ApplicationInsights__ConnectionString",
+                          "value": "$(ApplicationInsightsConnectionString)",
+                          "slotSetting": false
+                        }
+                      ]
+
+# Stage para Alertas y Notificaciones
+- stage: Notifications
+  displayName: 'Notificaciones y Alertas'
+  dependsOn: [Test, DeployProduction]
+  condition: always()  # Ejecutar siempre, incluso en failure
+  jobs:
+    - job: SendNotifications
+      displayName: 'Enviar Notificaciones'
+      pool:
+        vmImage: 'windows-latest'
+      steps:
+        - task: PowerShell@2
+          displayName: 'Enviar Alerta a Slack/Teams'
+          inputs:
+            targetType: 'inline'
+            script: |
+              $webhookUrl = "$(SlackWebhookUrl)"  # Configurar variable en Azure DevOps
+              $message = @{
+                text = "Pipeline $(Build.DefinitionName) $(Build.BuildNumber) completado. Estado: $(Agent.JobStatus)"
+              } | ConvertTo-Json
+
+              Invoke-RestMethod -Uri $webhookUrl -Method Post -Body $message -ContentType 'application/json'
+
+                # Record deployment metrics
+                - task: PowerShell@2
+                  displayName: 'Record Deployment Metrics'
+                  inputs:
+                    targetType: 'inline'
+                    script: |
+                      $deploymentDate = Get-Date -Format "yyyy-MM-ddTHH:mm:ssZ"
+                      $metrics = @{
+                        deployment_timestamp = $deploymentDate
+                        environment = "production"
+                        version = "$(Build.BuildNumber)"
+                      } | ConvertTo-Json
+                      Write-Host "Deployment metrics: $metrics"
+
+  # Stage 5: Alerting and Notifications
+  - stage: Alerting
+    displayName: 'Alerting and Notifications'
+    dependsOn: DeployProduction
+    condition: always()
+    jobs:
+      - job: SendNotifications
+        displayName: 'Send Deployment Notifications'
+        pool:
+          vmImage: 'windows-latest'
+        steps:
+          # Send Slack notification
+          - task: PowerShell@2
+            displayName: 'Send Slack Notification'
+            inputs:
+              targetType: 'inline'
+              script: |
+                $webhookUrl = "$(slackWebhookUrl)"
+                if ($webhookUrl) {
+                  $message = "🚀 Deployment Completed`n- Application: Ticket Management System`n- Environment: Production`n- Version: $(Build.BuildNumber)`n- Status: $(Agent.JobStatus)`n- Build URL: $(System.TeamFoundationCollectionUri)$(System.TeamProject)/_build/results?buildId=$(Build.BuildId)"
+                  $body = @{ text = $message } | ConvertTo-Json
+                  Invoke-RestMethod -Uri $webhookUrl -Method Post -Body $body -ContentType 'application/json'
+                }
+            condition: and(succeeded(), ne(variables['slackWebhookUrl'], ''))
+
+          # Send Teams notification
+          - task: PowerShell@2
+            displayName: 'Send Teams Notification'
+            inputs:
+              targetType: 'inline'
+              script: |
+                $webhookUrl = "$(teamsWebhookUrl)"
+                if ($webhookUrl) {
+                  $body = @{
+                    '@type' = 'MessageCard'
+                    '@context' = 'http://schema.org/extensions'
+                    themeColor = '0076D7'
+                    summary = 'Deployment Notification'
+                    sections = @(@{
+                      activityTitle = '🚀 Deployment Completed'
+                      activitySubtitle = 'Ticket Management System'
+                      facts = @(
+                        @{ name = 'Environment'; value = 'Production' }
+                        @{ name = 'Version'; value = '$(Build.BuildNumber)' }
+                        @{ name = 'Status'; value = '$(Agent.JobStatus)' }
+                      )
+                      markdown = $true
+                    })
+                    potentialAction = @(@{
+                      '@type' = 'OpenUri'
+                      name = 'View Build'
+                      targets = @(@{ os = 'default'; uri = '$(System.TeamFoundationCollectionUri)$(System.TeamProject)/_build/results?buildId=$(Build.BuildId)' })
+                    })
+                  } | ConvertTo-Json -Depth 10
+                  Invoke-RestMethod -Uri $webhookUrl -Method Post -Body $body -ContentType 'application/json'
+                }
+            condition: and(succeeded(), ne(variables['teamsWebhookUrl'], ''))
+
+  # Stage 6: Post-Deployment Monitoring
+  - stage: Monitoring
+    displayName: 'Post-Deployment Monitoring'
+    dependsOn: DeployProduction
+    condition: succeeded()
+    jobs:
+      - job: HealthCheck
+        displayName: 'Health Check and Monitoring'
+        pool:
+          vmImage: 'windows-latest'
+        steps:
+          # Wait for application to be ready
+          - task: Delay@1
+            displayName: 'Wait for deployment'
+            inputs:
+              delayForMinutes: '2'
+
+          # Health check
+          - task: PowerShell@2
+            displayName: 'Application Health Check'
+            inputs:
+              targetType: 'inline'
+              script: |
+                $url = "https://tu-app-service-name.azurewebsites.net/health"
+                $maxRetries = 10
+                $retryCount = 0
+
+                do {
+                  try {
+                    $response = Invoke-WebRequest -Uri $url -Method Get -TimeoutSec 30
+                    if ($response.StatusCode -eq 200) {
+                      Write-Host "✅ Health check passed"
+                      break
+                    }
+                  } catch {
+                    Write-Host "⚠️ Health check failed (attempt $($retryCount + 1)/$maxRetries): $($_.Exception.Message)"
+                  }
+
+                  $retryCount++
+                  if ($retryCount -lt $maxRetries) {
+                    Start-Sleep -Seconds 30
+                  }
+                } while ($retryCount -lt $maxRetries)
+
+                if ($retryCount -eq $maxRetries) {
+                  Write-Error "❌ Health check failed after $maxRetries attempts"
+                  exit 1
+                }
+
+          # Send success notification
+          - task: PowerShell@2
+            displayName: 'Send Success Notification'
+            inputs:
+              targetType: 'inline'
+              script: |
+                $webhookUrl = "$(slackWebhookUrl)"
+                if ($webhookUrl) {
+                  $message = "✅ Deployment Successful`n- Application: Ticket Management System`n- Health Check: PASSED`n- Monitoring: Active`n- Metrics: Available at /metrics"
+                  $body = @{ text = $message } | ConvertTo-Json
+                  Invoke-RestMethod -Uri $webhookUrl -Method Post -Body $body -ContentType 'application/json'
+                }
+            condition: ne(variables['slackWebhookUrl'], '')
+
+          # Alert on failure
+          - task: PowerShell@2
+            displayName: 'Send Failure Alert'
+            inputs:
+              targetType: 'inline'
+              script: |
+                $webhookUrl = "$(slackWebhookUrl)"
+                if ($webhookUrl) {
+                  $message = "❌ Deployment Failed`n- Application: Ticket Management System`n- Status: FAILED`n- Build URL: $(System.TeamFoundationCollectionUri)$(System.TeamProject)/_build/results?buildId=$(Build.BuildId)`n- Action Required: Check logs and redeploy"
+                  $body = @{ text = $message } | ConvertTo-Json
+                  Invoke-RestMethod -Uri $webhookUrl -Method Post -Body $body -ContentType 'application/json'
+                }
+            condition: and(failed(), ne(variables['slackWebhookUrl'], ''))

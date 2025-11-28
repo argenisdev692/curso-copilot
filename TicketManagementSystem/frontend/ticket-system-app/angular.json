@@ -128,4 +128,7 @@
 },
 "cli": {
   "analytics": false
+},
+"cli": {
+  "analytics": false
 }
