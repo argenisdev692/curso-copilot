@@ -1,0 +1,103 @@
+@BookingSystemAPI.Api_HostAddress = https://localhost:7001
+@token = {{login.response.body.data.token}}
+@refreshToken = {{login.response.body.data.refreshToken}}
+
+### ============================================
+### AUTENTICACIÓN - ENDPOINTS
+### ============================================
+
+### Registrar nuevo usuario
+# @name register
+POST {{BookingSystemAPI.Api_HostAddress}}/api/auth/register
+Content-Type: application/json
+
+{
+    "email": "nuevo.usuario@ejemplo.com",
+    "password": "MiContraseña123!",
+    "confirmPassword": "MiContraseña123!",
+    "firstName": "Juan",
+    "lastName": "Pérez"
+}
+
+### Login de usuario
+# @name login
+POST {{BookingSystemAPI.Api_HostAddress}}/api/auth/login
+Content-Type: application/json
+
+{
+    "email": "nuevo.usuario@ejemplo.com",
+    "password": "MiContraseña123!"
+}
+
+### Refresh Token - Renovar token de acceso
+# @name refresh
+POST {{BookingSystemAPI.Api_HostAddress}}/api/auth/refresh
+Content-Type: application/json
+
+{
+    "refreshToken": "{{refreshToken}}"
+}
+
+### Revocar Token - Cerrar sesión
+POST {{BookingSystemAPI.Api_HostAddress}}/api/auth/revoke
+Content-Type: application/json
+
+{
+    "refreshToken": "{{refreshToken}}"
+}
+
+### ============================================
+### HEALTH CHECK
+### ============================================
+
+### Verificar estado de la API
+GET {{BookingSystemAPI.Api_HostAddress}}/health
+
+### ============================================
+### ROOMS - ENDPOINTS (requiere autenticación)
+### ============================================
+
+### Listar todas las salas
+GET {{BookingSystemAPI.Api_HostAddress}}/api/rooms
+Authorization: Bearer {{token}}
+
+### Obtener sala por ID
+GET {{BookingSystemAPI.Api_HostAddress}}/api/rooms/1
+Authorization: Bearer {{token}}
+
+### Crear nueva sala
+POST {{BookingSystemAPI.Api_HostAddress}}/api/rooms
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+    "name": "Sala de Conferencias A",
+    "capacity": 20,
+    "description": "Sala grande con proyector y videoconferencia",
+    "location": "Piso 3, Edificio Principal"
+}
+
+### ============================================
+### BOOKINGS - ENDPOINTS (requiere autenticación)
+### ============================================
+
+### Listar todas las reservas
+GET {{BookingSystemAPI.Api_HostAddress}}/api/bookings
+Authorization: Bearer {{token}}
+
+### Obtener reserva por ID
+GET {{BookingSystemAPI.Api_HostAddress}}/api/bookings/1
+Authorization: Bearer {{token}}
+
+### Crear nueva reserva
+POST {{BookingSystemAPI.Api_HostAddress}}/api/bookings
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+    "roomId": 1,
+    "title": "Reunión de equipo",
+    "startTime": "2025-12-03T10:00:00Z",
+    "endTime": "2025-12-03T11:00:00Z",
+    "description": "Revisión semanal del sprint"
+}
