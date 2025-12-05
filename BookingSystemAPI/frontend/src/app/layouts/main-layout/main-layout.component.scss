@@ -1,0 +1,13 @@
+.layout-container {
+  .active-link {
+    background-color: rgba(0, 0, 0, 0.04);
+
+    mat-icon {
+      color: var(--mat-sidenav-content-background-color);
+    }
+  }
+}
+
+mat-sidenav {
+  border-right: 1px solid rgba(0, 0, 0, 0.12);
+}

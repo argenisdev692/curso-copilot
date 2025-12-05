@@ -69,12 +69,15 @@ try
     // Configurar AutoMapper
     builder.Services.AddAutoMapper(Assembly.GetExecutingAssembly());
 
+    // Registrar HttpContextAccessor para acceso al usuario actual
+    builder.Services.AddHttpContextAccessor();
+
     // Configurar FluentValidation
     builder.Services.AddFluentValidationAutoValidation();
     builder.Services.AddValidatorsFromAssembly(Assembly.GetExecutingAssembly());
 
     // Registrar servicios de la aplicación
-    builder.Services.AddApplicationServices();
+    builder.Services.AddApplicationServices(builder.Configuration);
 
     // Registrar servicio de bloqueo de cuentas (OWASP A07:2021 - Identification and Authentication Failures)
     builder.Services.AddSingleton<IAccountLockoutService, AccountLockoutService>();
@@ -147,32 +150,40 @@ try
     // Configurar el Global Exception Handler
     builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 
-    // Configurar Swagger/OpenAPI con soporte para JWT
+    // Configurar Swagger/OpenAPI con soporte para JWT y Tags por grupo
     builder.Services.AddEndpointsApiExplorer();
     builder.Services.AddSwaggerGen(options =>
     {
+        // ═══════════════════════════════════════════════════════════════
+        // 📖 INFORMACIÓN DE LA API
+        // ═══════════════════════════════════════════════════════════════
         options.SwaggerDoc("v1", new OpenApiInfo
         {
             Version = "v1",
             Title = "BookingSystem API",
-            Description = "API para gestión de reservas con autenticación JWT",
+            Description = "API para gestión de reservas con autenticación JWT Bearer",
             Contact = new OpenApiContact
             {
                 Name = "Soporte",
                 Email = "soporte@bookingsystem.com"
+            },
+            License = new OpenApiLicense
+            {
+                Name = "MIT",
+                Url = new Uri("https://opensource.org/licenses/MIT")
             }
         });
 
-        // Configuración de seguridad JWT para Swagger
+        // ═══════════════════════════════════════════════════════════════
+        // 🔐 CONFIGURACIÓN JWT BEARER (OpenAPI 3.0 - Mejor práctica)
+        // ═══════════════════════════════════════════════════════════════
         options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
         {
-            Description = @"JWT Authorization header usando el esquema Bearer.
-                          Ingrese 'Bearer' [espacio] y luego su token.
-                          Ejemplo: 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...'",
             Name = "Authorization",
+            Description = "Ingresa el token JWT. Ejemplo: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
             In = ParameterLocation.Header,
-            Type = SecuritySchemeType.ApiKey,
-            Scheme = "Bearer",
+            Type = SecuritySchemeType.Http,
+            Scheme = "bearer",
             BearerFormat = "JWT"
         });
 
@@ -191,13 +202,39 @@ try
             }
         });
 
-        // Incluir comentarios XML para documentación
+        // ═══════════════════════════════════════════════════════════════
+        // 🏷️ AGRUPACIÓN DE TAGS POR CONTROLADOR
+        // ═══════════════════════════════════════════════════════════════
+        options.TagActionsBy(apiDesc =>
+        {
+            // Agrupa por nombre del controlador
+            if (apiDesc.ActionDescriptor.RouteValues.TryGetValue("controller", out var controller))
+            {
+                return new[] { controller };
+            }
+            
+            // Para Minimal APIs, usar el primer segmento de la ruta
+            return apiDesc.RelativePath?.Split('/').FirstOrDefault() is string path
+                ? new[] { char.ToUpper(path[0]) + path[1..] }
+                : new[] { "General" };
+        });
+
+        // 📑 Ordenar acciones por tag y ruta
+        options.OrderActionsBy(apiDesc =>
+            $"{apiDesc.ActionDescriptor.RouteValues["controller"]}_{apiDesc.RelativePath}");
+
+        // ═══════════════════════════════════════════════════════════════
+        // 📖 COMENTARIOS XML PARA DOCUMENTACIÓN
+        // ═══════════════════════════════════════════════════════════════
         var xmlFilename = $"{Assembly.GetExecutingAssembly().GetName().Name}.xml";
         var xmlPath = Path.Combine(AppContext.BaseDirectory, xmlFilename);
         if (File.Exists(xmlPath))
         {
             options.IncludeXmlComments(xmlPath);
         }
+
+        // Habilitar anotaciones de Swagger (para [SwaggerOperation])
+        options.EnableAnnotations();
     });
 
     // Configurar CORS con orígenes permitidos desde configuración
@@ -272,6 +309,10 @@ try
         {
             options.SwaggerEndpoint("/swagger/v1/swagger.json", "BookingSystem API v1");
             options.RoutePrefix = string.Empty;
+            options.DocExpansion(Swashbuckle.AspNetCore.SwaggerUI.DocExpansion.List);
+            options.DefaultModelsExpandDepth(-1); // Ocultar schemas por defecto
+            options.DisplayRequestDuration();
+            options.EnablePersistAuthorization(); // Persistir token JWT
         });
     }
 
@@ -292,6 +333,37 @@ try
 
     app.UseAuthentication();
     app.UseAuthorization();
+
+    // Aplicar migraciones automáticamente (crear tablas si no existen)
+    using (var scope = app.Services.CreateScope())
+    {
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
+        
+        // Solo si no es InMemory database
+        if (!string.IsNullOrEmpty(connectionString) && !connectionString.Contains("YOUR_SERVER"))
+        {
+            try
+            {
+                Log.Information("Verificando/Creando base de datos y tablas...");
+                // Usar EnsureCreated para crear las tablas basadas en el modelo
+                var created = db.Database.EnsureCreated();
+                if (created)
+                {
+                    Log.Information("Base de datos y tablas creadas correctamente");
+                }
+                else
+                {
+                    Log.Information("Base de datos ya existe");
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, "Error al crear/verificar la base de datos");
+                throw;
+            }
+        }
+    }
 
     // Health check endpoint
     app.MapHealthChecks("/health");

@@ -1,0 +1,97 @@
+<div class="p-6">
+  <!-- Header -->
+  <div class="mb-6 flex items-center justify-between">
+    <div>
+      <h1 class="text-2xl font-bold text-gray-900">Todas las Reservas</h1>
+      <p class="text-gray-600">Gestiona las reservas del sistema</p>
+    </div>
+    <button mat-raised-button color="primary" (click)="loadBookings()">
+      <mat-icon>refresh</mat-icon>
+      Actualizar
+    </button>
+  </div>
+
+  @if (isLoading()) {
+    <div class="flex items-center justify-center py-12">
+      <mat-spinner diameter="48"></mat-spinner>
+    </div>
+  } @else if (error()) {
+    <div class="rounded-lg bg-red-50 p-6 text-center">
+      <mat-icon class="mb-2 text-red-500" style="font-size: 48px; width: 48px; height: 48px"
+        >error</mat-icon
+      >
+      <p class="text-red-700">{{ error() }}</p>
+      <button mat-raised-button color="primary" class="mt-4" (click)="loadBookings()">
+        Reintentar
+      </button>
+    </div>
+  } @else if (bookings().length === 0) {
+    <div class="rounded-lg bg-gray-50 p-6 text-center">
+      <mat-icon class="mb-2 text-gray-400" style="font-size: 48px; width: 48px; height: 48px"
+        >event_busy</mat-icon
+      >
+      <p class="text-gray-600">No hay reservas registradas</p>
+    </div>
+  } @else {
+    <mat-card>
+      <table mat-table [dataSource]="bookings()" class="w-full">
+        <!-- Room Name Column -->
+        <ng-container matColumnDef="roomName">
+          <th mat-header-cell *matHeaderCellDef>Sala</th>
+          <td mat-cell *matCellDef="let booking">{{ booking.roomName }}</td>
+        </ng-container>
+
+        <!-- User Name Column -->
+        <ng-container matColumnDef="userName">
+          <th mat-header-cell *matHeaderCellDef>Usuario</th>
+          <td mat-cell *matCellDef="let booking">{{ booking.userName }}</td>
+        </ng-container>
+
+        <!-- Start Time Column -->
+        <ng-container matColumnDef="startTime">
+          <th mat-header-cell *matHeaderCellDef>Inicio</th>
+          <td mat-cell *matCellDef="let booking">
+            {{ booking.startTime | date: 'dd/MM/yyyy HH:mm' }}
+          </td>
+        </ng-container>
+
+        <!-- End Time Column -->
+        <ng-container matColumnDef="endTime">
+          <th mat-header-cell *matHeaderCellDef>Fin</th>
+          <td mat-cell *matCellDef="let booking">
+            {{ booking.endTime | date: 'dd/MM/yyyy HH:mm' }}
+          </td>
+        </ng-container>
+
+        <!-- Status Column -->
+        <ng-container matColumnDef="status">
+          <th mat-header-cell *matHeaderCellDef>Estado</th>
+          <td mat-cell *matCellDef="let booking">
+            <span class="rounded-full px-2 py-1 text-xs" [ngClass]="getStatusColor(booking.status)">
+              {{ booking.status }}
+            </span>
+          </td>
+        </ng-container>
+
+        <!-- Actions Column -->
+        <ng-container matColumnDef="actions">
+          <th mat-header-cell *matHeaderCellDef>Acciones</th>
+          <td mat-cell *matCellDef="let booking">
+            <button
+              mat-icon-button
+              color="warn"
+              [disabled]="booking.status === 'cancelled'"
+              (click)="cancelBooking(booking)"
+              matTooltip="Cancelar reserva"
+            >
+              <mat-icon>cancel</mat-icon>
+            </button>
+          </td>
+        </ng-container>
+
+        <tr mat-header-row *matHeaderRowDef="displayedColumns"></tr>
+        <tr mat-row *matRowDef="let row; columns: displayedColumns"></tr>
+      </table>
+    </mat-card>
+  }
+</div>

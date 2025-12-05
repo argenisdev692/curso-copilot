@@ -6,6 +6,9 @@ namespace BookingSystemAPI.Api.Controllers;
 /// <summary>
 /// Controlador para verificación de salud y estado de la API.
 /// </summary>
+[ApiController]
+[Route("api/[controller]")]
+[Tags("❤️ Health")]
 public class HealthController : BaseApiController
 {
     /// <summary>

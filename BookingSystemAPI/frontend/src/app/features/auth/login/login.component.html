@@ -1,0 +1,75 @@
+<div class="flex min-h-screen items-center justify-center bg-gray-100 p-4">
+  <mat-card class="w-full max-w-md">
+    <mat-card-header class="justify-center">
+      <mat-card-title class="text-2xl font-bold">Iniciar Sesión</mat-card-title>
+    </mat-card-header>
+
+    <mat-card-content class="mt-6">
+      @if (errorMessage) {
+        <div class="mb-4 rounded bg-red-100 p-3 text-red-700">
+          {{ errorMessage }}
+        </div>
+      }
+
+      <form [formGroup]="loginForm" (ngSubmit)="onSubmit()" class="flex flex-col gap-4">
+        <mat-form-field appearance="outline" class="w-full">
+          <mat-label>Correo electrónico</mat-label>
+          <input matInput type="email" formControlName="email" placeholder="ejemplo@correo.com" />
+          <mat-icon matSuffix>email</mat-icon>
+          @if (loginForm.controls.email.hasError('required')) {
+            <mat-error>El correo es requerido</mat-error>
+          }
+          @if (loginForm.controls.email.hasError('email')) {
+            <mat-error>Ingrese un correo válido</mat-error>
+          }
+        </mat-form-field>
+
+        <mat-form-field appearance="outline" class="w-full">
+          <mat-label>Contraseña</mat-label>
+          <input
+            matInput
+            [type]="hidePassword ? 'password' : 'text'"
+            formControlName="password"
+            placeholder="••••••••"
+          />
+          <button
+            mat-icon-button
+            matSuffix
+            type="button"
+            (click)="hidePassword = !hidePassword"
+            [attr.aria-label]="hidePassword ? 'Mostrar contraseña' : 'Ocultar contraseña'"
+          >
+            <mat-icon>{{ hidePassword ? 'visibility_off' : 'visibility' }}</mat-icon>
+          </button>
+          @if (loginForm.controls.password.hasError('required')) {
+            <mat-error>La contraseña es requerida</mat-error>
+          }
+          @if (loginForm.controls.password.hasError('minlength')) {
+            <mat-error>Mínimo 6 caracteres</mat-error>
+          }
+        </mat-form-field>
+
+        <button
+          mat-raised-button
+          color="primary"
+          type="submit"
+          class="mt-2 w-full"
+          [disabled]="isLoading"
+        >
+          @if (isLoading) {
+            <mat-spinner diameter="20" class="inline-block"></mat-spinner>
+          } @else {
+            Ingresar
+          }
+        </button>
+      </form>
+    </mat-card-content>
+
+    <mat-card-actions class="justify-center">
+      <p class="text-gray-600">
+        ¿No tienes cuenta?
+        <a routerLink="/auth/register" class="text-primary-600 hover:underline">Regístrate aquí</a>
+      </p>
+    </mat-card-actions>
+  </mat-card>
+</div>

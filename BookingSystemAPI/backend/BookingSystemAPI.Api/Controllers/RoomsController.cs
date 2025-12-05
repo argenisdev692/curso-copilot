@@ -12,9 +12,11 @@ namespace BookingSystemAPI.Api.Controllers;
 /// Controlador para gestión de salas.
 /// Requiere autenticación JWT para todos los endpoints.
 /// </summary>
+[ApiController]
 [Route("api/[controller]")]
 [Authorize] // OWASP A01:2021 - Broken Access Control
 [EnableRateLimiting("general")]
+[Tags("🏠 Salas")]
 public class RoomsController : BaseApiController
 {
     private readonly IRoomService _roomService;

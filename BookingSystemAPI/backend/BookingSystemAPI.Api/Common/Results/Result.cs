@@ -199,4 +199,28 @@ public record Error(string Code, string Message)
     /// </summary>
     public static Error BusinessRule(string code, string message) =>
         new(code, message);
+
+    /// <summary>
+    /// Error interno del servidor.
+    /// </summary>
+    /// <param name="message">Mensaje descriptivo del error.</param>
+    /// <returns>Error con código Internal.</returns>
+    public static Error Internal(string message) =>
+        new("Internal", message);
+
+    /// <summary>
+    /// Error de acceso no autorizado.
+    /// </summary>
+    /// <param name="message">Mensaje descriptivo del error.</param>
+    /// <returns>Error con código Unauthorized.</returns>
+    public static Error Unauthorized(string message) =>
+        new("Unauthorized", message);
+
+    /// <summary>
+    /// Error de acceso prohibido.
+    /// </summary>
+    /// <param name="message">Mensaje descriptivo del error.</param>
+    /// <returns>Error con código Forbidden.</returns>
+    public static Error Forbidden(string message) =>
+        new("Forbidden", message);
 }

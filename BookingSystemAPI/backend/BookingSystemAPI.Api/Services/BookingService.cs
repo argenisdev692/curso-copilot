@@ -4,6 +4,7 @@ using BookingSystemAPI.Api.DTOs.Bookings;
 using BookingSystemAPI.Api.Events;
 using BookingSystemAPI.Api.Models;
 using BookingSystemAPI.Api.Repositories;
+using System.Security.Claims;
 
 namespace BookingSystemAPI.Api.Services;
 
@@ -17,6 +18,7 @@ public class BookingService : IBookingService
     private readonly IMapper _mapper;
     private readonly ILogger<BookingService> _logger;
     private readonly IEventPublisher _eventPublisher;
+    private readonly IHttpContextAccessor _httpContextAccessor;
 
     /// <summary>
     /// Errores de dominio específicos de reservas.
@@ -71,13 +73,24 @@ public class BookingService : IBookingService
         IRepository<Room> roomRepository,
         IMapper mapper,
         ILogger<BookingService> logger,
-        IEventPublisher eventPublisher)
+        IEventPublisher eventPublisher,
+        IHttpContextAccessor httpContextAccessor)
     {
         _bookingRepository = bookingRepository;
         _roomRepository = roomRepository;
         _mapper = mapper;
         _logger = logger;
         _eventPublisher = eventPublisher;
+        _httpContextAccessor = httpContextAccessor;
+    }
+
+    /// <summary>
+    /// Obtiene el email del usuario actual desde el contexto HTTP.
+    /// </summary>
+    private string? GetCurrentUserEmail()
+    {
+        return _httpContextAccessor.HttpContext?.User?.FindFirst(ClaimTypes.Email)?.Value
+            ?? _httpContextAccessor.HttpContext?.User?.FindFirst("email")?.Value;
     }
 
     /// <inheritdoc/>
@@ -86,6 +99,25 @@ public class BookingService : IBookingService
         _logger.LogInformation("Obteniendo todas las reservas");
 
         var bookings = await _bookingRepository.GetAllWithRoomAsync(cancellationToken);
+        var dtos = _mapper.Map<IEnumerable<BookingDto>>(bookings);
+
+        return Result<IEnumerable<BookingDto>>.Success(dtos);
+    }
+
+    /// <inheritdoc/>
+    public async Task<Result<IEnumerable<BookingDto>>> GetByCurrentUserAsync(CancellationToken cancellationToken = default)
+    {
+        var email = GetCurrentUserEmail();
+        
+        if (string.IsNullOrEmpty(email))
+        {
+            _logger.LogWarning("No se pudo obtener el email del usuario actual");
+            return Result<IEnumerable<BookingDto>>.Success(Enumerable.Empty<BookingDto>());
+        }
+
+        _logger.LogInformation("Obteniendo reservas del usuario {Email}", email);
+
+        var bookings = await _bookingRepository.GetByOrganizerEmailAsync(email, cancellationToken);
         var dtos = _mapper.Map<IEnumerable<BookingDto>>(bookings);
 
         return Result<IEnumerable<BookingDto>>.Success(dtos);
@@ -438,4 +470,126 @@ public class BookingService : IBookingService
             _logger.LogWarning(ex, "No se pudo publicar evento BookingCancelledEvent para reserva {BookingId}", booking.Id);
         }
     }
+
+    #region Consultas LINQ Optimizadas
+
+    /// <inheritdoc/>
+    public async Task<Result<PagedResultDto<BookingSearchResultDto>>> SearchBookingsAsync(
+        BookingQueryDto query,
+        CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation(
+            "Buscando reservas con filtros: RoomId={RoomId}, Status={Status}, Page={Page}",
+            query.RoomId, query.Status, query.Page);
+
+        try
+        {
+            var result = await _bookingRepository.GetBookingsWithFiltersAsync(query, cancellationToken);
+            return Result<PagedResultDto<BookingSearchResultDto>>.Success(result);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error al buscar reservas con filtros");
+            return Result<PagedResultDto<BookingSearchResultDto>>.Failure(
+                Error.Internal("Error al buscar reservas. Intente nuevamente."));
+        }
+    }
+
+    /// <inheritdoc/>
+    public async Task<Result<BookingSummaryDto>> GetBookingsSummaryAsync(
+        DateTime startDate,
+        DateTime endDate,
+        CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation(
+            "Obteniendo resumen de reservas para período {StartDate} - {EndDate}",
+            startDate, endDate);
+
+        // Validar rango de fechas
+        if (startDate > endDate)
+        {
+            return Result<BookingSummaryDto>.Failure(
+                Error.BusinessRule("InvalidDateRange", "La fecha de inicio debe ser anterior a la fecha de fin."));
+        }
+
+        try
+        {
+            var summary = await _bookingRepository.GetBookingsSummaryAsync(startDate, endDate, cancellationToken);
+            return Result<BookingSummaryDto>.Success(summary);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error al obtener resumen de reservas");
+            return Result<BookingSummaryDto>.Failure(
+                Error.Internal("Error al obtener resumen de reservas. Intente nuevamente."));
+        }
+    }
+
+    /// <inheritdoc/>
+    public async Task<Result<IEnumerable<RoomBookingSummaryDto>>> GetRoomsSummaryAsync(
+        DateTime startDate,
+        DateTime endDate,
+        CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation(
+            "Obteniendo resumen de reservas por sala para período {StartDate} - {EndDate}",
+            startDate, endDate);
+
+        if (startDate > endDate)
+        {
+            return Result<IEnumerable<RoomBookingSummaryDto>>.Failure(
+                Error.BusinessRule("InvalidDateRange", "La fecha de inicio debe ser anterior a la fecha de fin."));
+        }
+
+        try
+        {
+            var summaries = await _bookingRepository.GetBookingsSummaryByRoomAsync(startDate, endDate, cancellationToken);
+            return Result<IEnumerable<RoomBookingSummaryDto>>.Success(summaries);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error al obtener resumen de reservas por sala");
+            return Result<IEnumerable<RoomBookingSummaryDto>>.Failure(
+                Error.Internal("Error al obtener resumen por sala. Intente nuevamente."));
+        }
+    }
+
+    /// <inheritdoc/>
+    public async Task<Result<IEnumerable<DailyBookingStatsDto>>> GetDailyStatsAsync(
+        DateTime startDate,
+        DateTime endDate,
+        CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation(
+            "Obteniendo estadísticas diarias para período {StartDate} - {EndDate}",
+            startDate, endDate);
+
+        if (startDate > endDate)
+        {
+            return Result<IEnumerable<DailyBookingStatsDto>>.Failure(
+                Error.BusinessRule("InvalidDateRange", "La fecha de inicio debe ser anterior a la fecha de fin."));
+        }
+
+        // Limitar rango máximo a 90 días para evitar consultas muy pesadas
+        if ((endDate - startDate).TotalDays > 90)
+        {
+            return Result<IEnumerable<DailyBookingStatsDto>>.Failure(
+                Error.BusinessRule("DateRangeTooLarge", "El rango máximo permitido es de 90 días."));
+        }
+
+        try
+        {
+            var stats = await _bookingRepository.GetDailyStatsAsync(startDate, endDate, cancellationToken);
+            return Result<IEnumerable<DailyBookingStatsDto>>.Success(stats);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error al obtener estadísticas diarias");
+            return Result<IEnumerable<DailyBookingStatsDto>>.Failure(
+                Error.Internal("Error al obtener estadísticas diarias. Intente nuevamente."));
+        }
+    }
+
+    #endregion
 }
+

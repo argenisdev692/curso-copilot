@@ -1,4 +1,6 @@
+using BookingSystemAPI.Api.DTOs.Bookings;
 using BookingSystemAPI.Api.Models;
+using System.Linq.Expressions;
 
 namespace BookingSystemAPI.Api.Repositories;
 
@@ -61,4 +63,104 @@ public interface IBookingRepository : IRepository<Booking>
     Task<IEnumerable<Booking>> GetByOrganizerEmailAsync(
         string email,
         CancellationToken cancellationToken = default);
+
+    #region Consultas LINQ Optimizadas
+
+    /// <summary>
+    /// Obtiene reservas con filtros dinámicos, paginación y proyección optimizada.
+    /// </summary>
+    /// <remarks>
+    /// Utiliza AsNoTracking, proyección directa a DTO y paginación eficiente.
+    /// Todos los filtros son opcionales y se aplican mediante composición de IQueryable.
+    /// </remarks>
+    /// <param name="query">DTO con los filtros y parámetros de paginación.</param>
+    /// <param name="cancellationToken">Token de cancelación.</param>
+    /// <returns>Resultado paginado con reservas filtradas.</returns>
+    Task<PagedResultDto<BookingSearchResultDto>> GetBookingsWithFiltersAsync(
+        BookingQueryDto query,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Obtiene un resumen agregado de reservas para un período.
+    /// </summary>
+    /// <remarks>
+    /// Utiliza GroupBy y agregaciones en servidor para optimizar performance.
+    /// </remarks>
+    /// <param name="startDate">Fecha de inicio del período.</param>
+    /// <param name="endDate">Fecha de fin del período.</param>
+    /// <param name="cancellationToken">Token de cancelación.</param>
+    /// <returns>Resumen con métricas agregadas.</returns>
+    Task<BookingSummaryDto> GetBookingsSummaryAsync(
+        DateTime startDate,
+        DateTime endDate,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Obtiene resumen de reservas agrupado por sala.
+    /// </summary>
+    /// <param name="startDate">Fecha de inicio del período.</param>
+    /// <param name="endDate">Fecha de fin del período.</param>
+    /// <param name="cancellationToken">Token de cancelación.</param>
+    /// <returns>Lista de resúmenes por sala.</returns>
+    Task<IEnumerable<RoomBookingSummaryDto>> GetBookingsSummaryByRoomAsync(
+        DateTime startDate,
+        DateTime endDate,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Obtiene resumen de reservas agrupado por organizador.
+    /// </summary>
+    /// <param name="startDate">Fecha de inicio del período.</param>
+    /// <param name="endDate">Fecha de fin del período.</param>
+    /// <param name="topN">Número máximo de organizadores a retornar.</param>
+    /// <param name="cancellationToken">Token de cancelación.</param>
+    /// <returns>Lista de resúmenes por organizador.</returns>
+    Task<IEnumerable<OrganizerBookingSummaryDto>> GetBookingsSummaryByOrganizerAsync(
+        DateTime startDate,
+        DateTime endDate,
+        int topN = 10,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Obtiene estadísticas diarias de reservas.
+    /// </summary>
+    /// <param name="startDate">Fecha de inicio.</param>
+    /// <param name="endDate">Fecha de fin.</param>
+    /// <param name="cancellationToken">Token de cancelación.</param>
+    /// <returns>Estadísticas por día.</returns>
+    Task<IEnumerable<DailyBookingStatsDto>> GetDailyStatsAsync(
+        DateTime startDate,
+        DateTime endDate,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Busca reservas usando una expresión lambda personalizada con proyección.
+    /// </summary>
+    /// <typeparam name="TResult">Tipo del resultado proyectado.</typeparam>
+    /// <param name="predicate">Expresión de filtro.</param>
+    /// <param name="selector">Expresión de proyección.</param>
+    /// <param name="cancellationToken">Token de cancelación.</param>
+    /// <returns>Colección de resultados proyectados.</returns>
+    Task<IEnumerable<TResult>> QueryWithProjectionAsync<TResult>(
+        Expression<Func<Booking, bool>> predicate,
+        Expression<Func<Booking, TResult>> selector,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Ejecuta una consulta compilada para obtener reservas activas de una sala.
+    /// </summary>
+    /// <remarks>
+    /// Utiliza EF.CompileAsyncQuery para máxima performance en consultas repetitivas.
+    /// </remarks>
+    /// <param name="roomId">ID de la sala.</param>
+    /// <param name="fromDate">Fecha desde la cual buscar.</param>
+    /// <param name="cancellationToken">Token de cancelación.</param>
+    /// <returns>Reservas activas de la sala.</returns>
+    Task<IEnumerable<Booking>> GetActiveBookingsForRoomCompiledAsync(
+        int roomId,
+        DateTime fromDate,
+        CancellationToken cancellationToken = default);
+
+    #endregion
 }
+

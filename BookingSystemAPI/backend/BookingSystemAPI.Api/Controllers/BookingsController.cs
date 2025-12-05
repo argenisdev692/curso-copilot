@@ -12,9 +12,11 @@ namespace BookingSystemAPI.Api.Controllers;
 /// Controlador para gestión de reservas.
 /// Requiere autenticación JWT para todos los endpoints.
 /// </summary>
+[ApiController]
 [Route("api/[controller]")]
 [Authorize] // OWASP A01:2021 - Broken Access Control
 [EnableRateLimiting("general")]
+[Tags("📅 Reservas")]
 public class BookingsController : BaseApiController
 {
     private readonly IBookingService _bookingService;
@@ -42,6 +44,23 @@ public class BookingsController : BaseApiController
     public async Task<IActionResult> GetAll(CancellationToken cancellationToken)
     {
         var result = await _bookingService.GetAllAsync(cancellationToken);
+
+        return Ok(ApiResponse<IEnumerable<BookingDto>>.Ok(
+            result.Value!,
+            correlationId: CorrelationId));
+    }
+
+    /// <summary>
+    /// Obtiene las reservas del usuario actual.
+    /// </summary>
+    /// <param name="cancellationToken">Token de cancelación.</param>
+    /// <returns>Lista de reservas del usuario.</returns>
+    /// <response code="200">Lista de reservas del usuario obtenida exitosamente.</response>
+    [HttpGet("my")]
+    [ProducesResponseType(typeof(ApiResponse<IEnumerable<BookingDto>>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetMyBookings(CancellationToken cancellationToken)
+    {
+        var result = await _bookingService.GetByCurrentUserAsync(cancellationToken);
 
         return Ok(ApiResponse<IEnumerable<BookingDto>>.Ok(
             result.Value!,

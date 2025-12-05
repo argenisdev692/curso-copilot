@@ -1,3 +1,4 @@
+using BookingSystemAPI.Api.Common.Options;
 using BookingSystemAPI.Api.Repositories;
 using BookingSystemAPI.Api.Services;
 
@@ -12,9 +13,16 @@ public static class ServiceCollectionExtensions
     /// Registra los servicios de la aplicación en el contenedor de DI.
     /// </summary>
     /// <param name="services">Colección de servicios.</param>
+    /// <param name="configuration">Configuración de la aplicación.</param>
     /// <returns>Colección de servicios con los servicios registrados.</returns>
-    public static IServiceCollection AddApplicationServices(this IServiceCollection services)
+    public static IServiceCollection AddApplicationServices(
+        this IServiceCollection services,
+        IConfiguration configuration)
     {
+        // Registrar opciones de configuración
+        services.Configure<QueryOptions>(
+            configuration.GetSection(QueryOptions.SectionName));
+
         // Registrar repositorios genéricos
         services.AddScoped(typeof(IRepository<>), typeof(Repository<>));
 
@@ -27,6 +35,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IBookingService, BookingService>();
         services.AddScoped<IRoomService, RoomService>();
         services.AddScoped<IAuthService, AuthService>();
+        services.AddScoped<IRoomReportService, RoomReportService>();
 
         return services;
     }

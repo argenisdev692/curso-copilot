@@ -1,0 +1,13 @@
+{
+  "user": {
+    "email": "test@example.com",
+    "password": "Test123!",
+    "name": "Test User"
+  },
+  "booking": {
+    "roomId": 1,
+    "startTime": "2025-01-15T09:00:00Z",
+    "endTime": "2025-01-15T10:00:00Z",
+    "title": "Test Meeting"
+  }
+}

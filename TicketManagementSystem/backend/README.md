@@ -4,13 +4,19 @@
 [![Entity Framework Core](https://img.shields.io/badge/EF_Core-8.0-green.svg)](https://docs.microsoft.com/ef/)
 [![SQLite](https://img.shields.io/badge/SQLite-3.x-blue.svg)](https://www.sqlite.org/)
 [![Swagger](https://img.shields.io/badge/Swagger-OpenAPI-green.svg)](https://swagger.io/)
+[![RabbitMQ](https://img.shields.io/badge/RabbitMQ-Messaging-orange.svg)](https://www.rabbitmq.com/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](../LICENSE)
 
-> Robust RESTful API for the ticket management system, built with ASP.NET Core 8, clean architecture, and development best practices.
+> Robust RESTful API for the ticket management system, built with ASP.NET Core 8, Clean Architecture, CQRS, Event-Driven patterns, and enterprise best practices.
+
+---
 
 ## 📋 Table of Contents
 
-- [🏗️ Architecture](#️-architecture)
+- [🏗️ Architecture Overview](#️-architecture-overview)
+- [🎯 Architectural Decisions](#-architectural-decisions)
+- [📦 Component Architecture](#-component-architecture)
+- [🔄 Event-Driven Architecture](#-event-driven-architecture)
 - [📁 Project Structure](#-project-structure)
 - [🛠️ Technologies and Packages](#️-technologies-and-packages)
 - [🚀 Installation and Configuration](#-installation-and-configuration)
@@ -18,104 +24,291 @@
 - [📡 API Endpoints](#-api-endpoints)
 - [🗄️ Database](#️-database)
 - [⚡ Rate Limiting](#-rate-limiting)
-- [📊 Logging and Monitoring](#-logging-and-monitoring)
-- [🧪 Testing](#-testing)
+- [📊 Observability Stack](#-observability-stack)
+- [🧪 Testing Strategy](#-testing-strategy)
 - [🔧 Advanced Configuration](#-advanced-configuration)
 - [🐛 Troubleshooting](#-troubleshooting)
 
 ---
 
-## 🏗️ Architecture
+## 🏗️ Architecture Overview
 
-### Architecture Diagram
+### High-Level Architecture (C4 - Context)
 
 ```mermaid
 graph TB
-    subgraph "Presentation Layer"
-        A[Controllers]
-        B[DTOs]
-        C[Validators]
+    subgraph "External Users"
+        WEB[🌐 Web Client<br/>Angular 18]
+        MOBILE[📱 Mobile Client<br/>Future]
     end
-
-    subgraph "Application Layer"
-        D[Services]
-        E[MediatR Handlers]
-        F[AutoMapper Profiles]
+    
+    subgraph "Ticket Management System"
+        API[🚀 REST API<br/>.NET 8]
+        MQ[🐰 RabbitMQ<br/>Message Broker]
     end
-
-    subgraph "Domain Layer"
-        G[Models/Entities]
-        H[Business Rules]
-        I[Specifications]
+    
+    subgraph "Data Stores"
+        DB[(🗄️ SQLite/SQL Server<br/>Primary DB)]
+        CACHE[(⚡ In-Memory Cache<br/>Performance)]
+        REDIS[(🔴 Redis<br/>Distributed Cache)]
     end
-
-    subgraph "Infrastructure Layer"
-        J[Repositories]
-        K[DbContext]
-        L[External Services]
+    
+    subgraph "Observability"
+        LOGS[📋 Elasticsearch<br/>Logs]
+        METRICS[📊 Prometheus<br/>Metrics]
+        APM[🔍 App Insights<br/>APM]
     end
-
-    subgraph "Cross-Cutting Concerns"
-        M[Middlewares]
-        N[Logging - Serilog]
-        O[Authentication JWT]
-        P[Rate Limiting]
-    end
-
-    A --> D
-    A --> B
-    B --> C
-    D --> E
-    D --> J
-    E --> J
-    J --> K
-    K --> G
-    D --> H
-    A --> M
-    M --> N
-    M --> O
+    
+    WEB -->|HTTPS| API
+    MOBILE -.->|HTTPS| API
+    API -->|Read/Write| DB
+    API -->|Cache| CACHE
+    API -.->|Distributed| REDIS
+    API -->|Publish| MQ
+    MQ -->|Consume| API
+    API -->|Telemetry| APM
+    API -->|Logs| LOGS
+    API -->|Metrics| METRICS
 ```
 
-### HTTP Request Flow
+### Layered Architecture Diagram
+
+```mermaid
+graph TB
+    subgraph "🎨 Presentation Layer"
+        CTRL[Controllers<br/>REST Endpoints]
+        DTO[DTOs<br/>Request/Response]
+        VAL[Validators<br/>FluentValidation]
+        FILT[Filters<br/>Action Filters]
+    end
+
+    subgraph "⚙️ Application Layer"
+        SVC[Services<br/>Business Logic]
+        CQRS[CQRS Handlers<br/>MediatR]
+        MAP[AutoMapper<br/>Profiles]
+        EVENTS[Domain Events<br/>Publishers]
+    end
+
+    subgraph "🏛️ Domain Layer"
+        ENT[Entities<br/>Domain Models]
+        SPEC[Specifications<br/>Query Patterns]
+        RULES[Business Rules<br/>Validation]
+        INT[Interfaces<br/>Contracts]
+    end
+
+    subgraph "🔌 Infrastructure Layer"
+        REPO[Repositories<br/>Data Access]
+        CTX[DbContext<br/>EF Core]
+        EXT[External Services<br/>Email, APIs]
+        MQ[RabbitMQ<br/>Messaging]
+    end
+
+    subgraph "🛡️ Cross-Cutting Concerns"
+        AUTH[JWT Auth<br/>Security]
+        LOG[Serilog<br/>Logging]
+        CACHE[Caching<br/>Memory/Redis]
+        RATE[Rate Limiting<br/>Throttling]
+        HEALTH[Health Checks<br/>Monitoring]
+    end
+
+    CTRL --> SVC
+    CTRL --> DTO
+    DTO --> VAL
+    SVC --> CQRS
+    CQRS --> REPO
+    CQRS --> EVENTS
+    REPO --> CTX
+    CTX --> ENT
+    SVC --> SPEC
+    SVC --> MAP
+    
+    CTRL -.-> AUTH
+    CTRL -.-> LOG
+    SVC -.-> CACHE
+    CTRL -.-> RATE
+```
+
+### Request Pipeline Flow
 
 ```mermaid
 sequenceDiagram
-    participant C as Client
-    participant M as Middlewares
-    participant R as Rate Limiter
-    participant A as Auth Middleware
-    participant V as Validators
-    participant S as Service
-    participant Repo as Repository
-    participant DB as Database
+    participant C as 🌐 Client
+    participant MW as 🛡️ Middlewares
+    participant RL as ⚡ Rate Limiter
+    participant JWT as 🔐 JWT Auth
+    participant VAL as ✅ Validator
+    participant CTRL as 🎮 Controller
+    participant MED as 📨 MediatR
+    participant SVC as ⚙️ Service
+    participant REPO as 💾 Repository
+    participant DB as 🗄️ Database
+    participant MQ as 🐰 RabbitMQ
 
-    C->>M: HTTP Request
-    M->>M: Request Logging
-    M->>R: Check Rate Limit
-    R-->>M: OK / 429
-    M->>A: JWT Validation
-    A-->>M: Authorized
-    M->>V: Validate DTO
-    V-->>M: Valid
-    M->>S: Execute Business Logic
-    S->>Repo: Data Access
-    Repo->>DB: SQL Query
-    DB-->>Repo: Results
-    Repo-->>S: Entities
-    S-->>M: Response DTO
-    M-->>C: HTTP Response
+    C->>MW: HTTP Request
+    MW->>MW: Logging + CorrelationId
+    MW->>RL: Check Rate Limit
+    RL-->>MW: ✅ OK / ❌ 429
+    MW->>JWT: Validate Token
+    JWT-->>MW: ✅ Authorized
+    MW->>VAL: Validate DTO
+    VAL-->>MW: ✅ Valid
+    MW->>CTRL: Route to Action
+    CTRL->>MED: Send Command/Query
+    MED->>SVC: Handle Request
+    SVC->>REPO: Data Operation
+    REPO->>DB: SQL Query
+    DB-->>REPO: Results
+    REPO-->>SVC: Entities
+    SVC->>MQ: Publish Event (async)
+    SVC-->>MED: Response DTO
+    MED-->>CTRL: Result
+    CTRL-->>C: HTTP Response
 ```
 
-### Implemented Design Patterns
+---
+
+## 🎯 Architectural Decisions
+
+### ADR Summary
+
+| ID | Decision | Status | Rationale |
+|----|----------|--------|-----------|
+| **ADR-001** | Clean Architecture with CQRS | ✅ Adopted | Separation of concerns, testability, scalability |
+| **ADR-002** | MediatR for CQRS | ✅ Adopted | Decoupled handlers, pipeline behaviors, logging |
+| **ADR-003** | Repository + Unit of Work | ✅ Adopted | Data access abstraction, transaction management |
+| **ADR-004** | JWT with Refresh Tokens | ✅ Adopted | Stateless auth, token rotation for security |
+| **ADR-005** | RabbitMQ for Events | ✅ Adopted | Async processing, decoupled notifications |
+| **ADR-006** | FluentValidation | ✅ Adopted | Complex validation rules, testable, reusable |
+| **ADR-007** | Serilog + Elasticsearch | ✅ Adopted | Structured logging, centralized, searchable |
+| **ADR-008** | SQLite (Dev) / SQL Server (Prod) | ✅ Adopted | Easy dev setup, production-ready scaling |
+
+### Design Patterns Implemented
 
 | Pattern | Implementation | Purpose |
 |---------|----------------|---------|
-| **Repository Pattern** | `ITicketRepository`, `IUserRepository` | Data access abstraction |
-| **Unit of Work** | `IUnitOfWork` | Transaction management |
-| **CQRS** | `MediatR` handlers | Command and query separation |
-| **Mediator** | `MediatR` | Component decoupling |
-| **Strategy** | `IPasswordHasher` | Interchangeable algorithms |
-| **Specification** | `Specifications/` | Query criteria encapsulation |
+| **Repository** | `ITicketRepository`, `IUserRepository` | Abstract data access from business logic |
+| **Unit of Work** | `IUnitOfWork`, `ApplicationDbContext` | Manage transactions across repositories |
+| **CQRS** | MediatR Commands/Queries | Separate read/write operations |
+| **Mediator** | MediatR | Decouple request handling |
+| **Strategy** | `IPasswordHasher`, `BCryptPasswordHasher` | Interchangeable algorithms |
+| **Specification** | `Specifications/` folder | Encapsulate query criteria |
+| **Factory** | `TicketFactory` (implicit) | Object creation |
+| **Observer** | RabbitMQ Events | Event-driven notifications |
+| **Decorator** | Pipeline Behaviors | Cross-cutting concerns |
+
+---
+
+## 📦 Component Architecture
+
+### Service Layer Dependencies
+
+```mermaid
+graph LR
+    subgraph "Controllers"
+        TC[TicketsController]
+        UC[UsersController]
+        AC[AuthController]
+        CC[CommentsController]
+    end
+    
+    subgraph "Services"
+        TS[TicketService]
+        US[UserService]
+        AS[AuthService]
+        CS[CommentService]
+        JWT[JwtTokenService]
+        NS[NotificationService]
+    end
+    
+    subgraph "Repositories"
+        TR[ITicketRepository]
+        UR[IUserRepository]
+        CR[ICommentRepository]
+        UOW[IUnitOfWork]
+    end
+    
+    TC --> TS
+    UC --> US
+    AC --> AS
+    CC --> CS
+    
+    TS --> TR
+    TS --> UOW
+    TS --> NS
+    US --> UR
+    AS --> UR
+    AS --> JWT
+    CS --> CR
+```
+
+### Key Components
+
+| Component | Responsibility | Dependencies |
+|-----------|---------------|--------------|
+| `TicketService` | Ticket CRUD, business rules | `ITicketRepository`, `IUnitOfWork`, `IRabbitMQPublisher` |
+| `AuthService` | Authentication, token management | `IUserRepository`, `JwtTokenService`, `IPasswordHasher` |
+| `JwtTokenService` | JWT generation/validation | Configuration settings |
+| `NotificationConsumer` | Process async notifications | RabbitMQ connection |
+| `CacheHelper` | Caching layer | `IMemoryCache`, `IDistributedCache` |
+
+---
+
+## 🔄 Event-Driven Architecture
+
+### RabbitMQ Integration
+
+```mermaid
+graph TB
+    subgraph "Publishers"
+        TS[TicketService]
+        AS[AuthService]
+    end
+    
+    subgraph "RabbitMQ"
+        EX[ticket.events<br/>Exchange]
+        Q1[notifications.queue]
+        Q2[cache.invalidation.queue]
+        DLQ[dead-letter.queue]
+    end
+    
+    subgraph "Consumers"
+        NC[NotificationConsumer<br/>Emails, Push]
+        CC[CacheInvalidationConsumer<br/>Cache Sync]
+    end
+    
+    TS -->|TicketCreated| EX
+    TS -->|TicketAssigned| EX
+    TS -->|StatusChanged| EX
+    AS -->|UserRegistered| EX
+    
+    EX -->|Route| Q1
+    EX -->|Route| Q2
+    Q1 --> NC
+    Q2 --> CC
+    Q1 -.->|Failed| DLQ
+```
+
+### Domain Events
+
+| Event | Trigger | Consumers |
+|-------|---------|-----------|
+| `TicketCreatedEvent` | New ticket created | NotificationConsumer |
+| `TicketAssignedEvent` | Ticket assigned to agent | NotificationConsumer |
+| `TicketStatusChangedEvent` | Status update | NotificationConsumer, CacheInvalidationConsumer |
+| `TicketCacheInvalidationEvent` | Any ticket change | CacheInvalidationConsumer |
+
+### Event Structure
+
+```csharp
+public record TicketCreatedEvent : BaseEvent
+{
+    public int TicketId { get; init; }
+    public string Title { get; init; }
+    public string CreatedByEmail { get; init; }
+    public DateTime CreatedAt { get; init; }
+    public string CorrelationId { get; init; }
+}
+```
 
 ---
 
@@ -649,6 +842,143 @@ dotnet ef migrations script
 
 ---
 
+## 📊 Observability Stack
+
+### Three Pillars of Observability
+
+```mermaid
+graph TB
+    subgraph "📋 Logging"
+        SL[Serilog]
+        ES[Elasticsearch]
+        KB[Kibana]
+    end
+    
+    subgraph "📊 Metrics"
+        PROM[Prometheus]
+        GRAF[Grafana]
+        AI[App Insights]
+    end
+    
+    subgraph "🔍 Tracing"
+        COR[CorrelationId]
+        APM[Application Insights]
+        DIST[Distributed Tracing]
+    end
+    
+    API[.NET API] --> SL
+    SL --> ES
+    ES --> KB
+    
+    API --> PROM
+    PROM --> GRAF
+    
+    API --> APM
+    APM --> DIST
+    COR --> DIST
+```
+
+### Metrics Exposed
+
+| Metric | Type | Description |
+|--------|------|-------------|
+| `ticket_management_request_duration_seconds` | Histogram | HTTP request latency |
+| `ticket_management_active_tickets_total` | Gauge | Current active tickets |
+| `ticket_management_deployments_total` | Counter | Deployment count |
+| `ticket_management_incident_resolution_time_seconds` | Histogram | MTTR tracking |
+
+### DORA Metrics
+
+| Metric | Target | Measurement |
+|--------|--------|-------------|
+| **Deployment Frequency** | Daily | `deployments_total / time_period` |
+| **Lead Time for Changes** | < 1 day | Commit → Production time |
+| **Change Failure Rate** | < 15% | Failed deployments / total |
+| **Mean Time to Recovery** | < 1 hour | Incident detection → resolution |
+
+### Health Check Endpoints
+
+| Endpoint | Description |
+|----------|-------------|
+| `/health` | Overall API health |
+| `/health/ready` | Readiness probe (DB, RabbitMQ) |
+| `/health/live` | Liveness probe |
+| `/metrics` | Prometheus metrics |
+
+---
+
+## 🧪 Testing Strategy
+
+### Test Pyramid
+
+```mermaid
+graph TB
+    subgraph "🔺 Test Pyramid"
+        E2E[🌐 E2E Tests<br/>Cypress/Playwright<br/>10%]
+        INT[🔗 Integration Tests<br/>WebApplicationFactory<br/>30%]
+        UNIT[🧩 Unit Tests<br/>xUnit + Moq<br/>60%]
+    end
+    
+    E2E --> INT
+    INT --> UNIT
+```
+
+### Test Categories
+
+| Type | Framework | Coverage Target | Focus |
+|------|-----------|-----------------|-------|
+| **Unit Tests** | xUnit, Moq, FluentAssertions | 80%+ | Services, Validators |
+| **Integration Tests** | WebApplicationFactory, TestContainers | 70%+ | API Endpoints, DB |
+| **Contract Tests** | Pact | Key APIs | API contracts |
+
+### Test Structure (AAA Pattern)
+
+```csharp
+[Fact]
+public async Task CreateTicket_ValidData_ReturnsCreatedTicket()
+{
+    // Arrange
+    var createDto = new CreateTicketDto 
+    { 
+        Title = "Test Ticket", 
+        Description = "Test Description",
+        PriorityId = 2
+    };
+    
+    _mockRepository
+        .Setup(x => x.AddAsync(It.IsAny<Ticket>()))
+        .ReturnsAsync(new Ticket { Id = 1, Title = "Test Ticket" });
+
+    // Act
+    var result = await _service.CreateAsync(createDto);
+
+    // Assert
+    result.Should().NotBeNull();
+    result.Id.Should().Be(1);
+    result.Title.Should().Be("Test Ticket");
+    
+    _mockRepository.Verify(x => x.AddAsync(It.IsAny<Ticket>()), Times.Once);
+}
+```
+
+### Running Tests
+
+```powershell
+# All tests
+dotnet test
+
+# With coverage
+dotnet test --collect:"XPlat Code Coverage"
+
+# Specific category
+dotnet test --filter "Category=Integration"
+
+# Generate report
+reportgenerator -reports:coverage.xml -targetdir:coveragereport
+```
+
+---
+
 ## 📊 Logging and Monitoring
 
 ### Serilog Configuration
@@ -692,25 +1022,13 @@ dotnet test --collect:"XPlat Code Coverage"
 dotnet test --filter "FullyQualifiedName~TicketServiceTests"
 ```
 
-### Test Structure
+### Test Naming Convention
 
-```csharp
-[Fact]
-public async Task CreateTicket_ValidData_ReturnsCreatedTicket()
-{
-    // Arrange
-    var createDto = new CreateTicketDto { Title = "Test", Description = "Test Desc" };
-    _mockRepository.Setup(x => x.AddAsync(It.IsAny<Ticket>()))
-                   .ReturnsAsync(new Ticket { Id = 1 });
-
-    // Act
-    var result = await _service.CreateAsync(createDto);
-
-    // Assert
-    result.Should().NotBeNull();
-    result.Id.Should().Be(1);
-}
 ```
+[Method]_[Scenario]_[ExpectedResult]
+```
+
+Example: `CreateTicket_ValidData_ReturnsCreatedTicket`
 
 ---
 
@@ -777,8 +1095,10 @@ Verify that the frontend origin is in the `WithOrigins()` list in `Program.cs`.
 - [📖 OpenAPI Specification](TicketManagementSystem.API/openapi.yaml) - Complete API specification
 - [📖 API Specification](../api-specification.md)
 - [🔒 Security Guidelines](SECURITY.md)
+- [📊 Monitoring Guide](MONITORING.md)
 - [📊 Database Management](DATABASE_MANAGEMENT.md)
 - [⚡ Rate Limiting](RATE_LIMITING.md)
+- [📝 ADR: JWT Refresh Tokens](docs/ADR-JWT-RefreshTokens.md)
 - [🔧 Troubleshooting](../TROUBLESHOOTING.md)
 
 ### Import OpenAPI in Tools
@@ -810,4 +1130,42 @@ This project is under the MIT License - see [LICENSE](../LICENSE) for details.
 
 ---
 
-**Developed as part of the "GitHub Copilot for Web Developers (.NET and Angular)" course - November 2025** 🚀
+**Developed as part of the "GitHub Copilot for Web Developers (.NET and Angular)" course - December 2025** 🚀
+
+---
+
+## 📐 Architecture Compliance
+
+### Code Quality Gates
+
+| Metric | Target | Tool |
+|--------|--------|------|
+| Code Coverage | ≥ 80% | Coverlet |
+| Cyclomatic Complexity | ≤ 10 | SonarQube |
+| Technical Debt Ratio | ≤ 5% | SonarQube |
+| Security Vulnerabilities | 0 Critical | Dependabot |
+
+### Dependency Rules
+
+```mermaid
+graph TD
+    CTRL[Controllers] -->|Can reference| SVC[Services]
+    CTRL -->|Can reference| DTO[DTOs]
+    SVC -->|Can reference| REPO[Repositories]
+    SVC -->|Can reference| ENT[Entities]
+    REPO -->|Can reference| ENT
+    REPO -->|Can reference| CTX[DbContext]
+    
+    SVC -.->|❌ Cannot| CTRL
+    REPO -.->|❌ Cannot| SVC
+    ENT -.->|❌ Cannot| DTO
+```
+
+### Layer Responsibilities
+
+| Layer | Can Reference | Cannot Reference |
+|-------|---------------|------------------|
+| **Presentation** | Application, Domain, Infrastructure | - |
+| **Application** | Domain, Infrastructure | Presentation |
+| **Domain** | - (self-contained) | All other layers |
+| **Infrastructure** | Domain | Presentation, Application |

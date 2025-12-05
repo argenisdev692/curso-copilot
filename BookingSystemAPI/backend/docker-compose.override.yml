@@ -1,0 +1,51 @@
+# =============================================================================
+# Docker Compose Override - Desarrollo Local
+# Configuración adicional para ambiente de desarrollo
+# =============================================================================
+
+version: '3.8'
+
+services:
+  # ---------------------------------------------------------------------------
+  # API - Configuración de Desarrollo
+  # ---------------------------------------------------------------------------
+  bookingsystem-api:
+    build:
+      args:
+        CONFIGURATION: Debug
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - Logging__LogLevel__Default=Debug
+      - Logging__LogLevel__Microsoft.AspNetCore=Information
+    ports:
+      - "8080:8080"
+      - "8081:8081"  # HTTPS (opcional)
+
+  # ---------------------------------------------------------------------------
+  # SQL Server - Configuración de Desarrollo
+  # ---------------------------------------------------------------------------
+  sqlserver:
+    ports:
+      - "1433:1433"
+
+  # ---------------------------------------------------------------------------
+  # RabbitMQ - Exponer Management UI
+  # ---------------------------------------------------------------------------
+  rabbitmq:
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+
+  # ---------------------------------------------------------------------------
+  # Adminer - UI para gestión de base de datos (solo desarrollo)
+  # ---------------------------------------------------------------------------
+  adminer:
+    container_name: bookingsystem-adminer
+    image: adminer:latest
+    ports:
+      - "8082:8080"
+    networks:
+      - bookingsystem-network
+    depends_on:
+      - sqlserver
+    restart: unless-stopped

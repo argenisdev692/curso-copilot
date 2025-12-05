@@ -17,6 +17,7 @@ namespace BookingSystemAPI.Api.Controllers;
 [ApiController]
 [Route("api/[controller]")]
 [EnableRateLimiting("auth")]
+[Tags("🔐 Autenticación")]
 public class AuthController : BaseApiController
 {
     private readonly IAuthService _authService;
